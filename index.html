@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#e9e5dc">
+  <meta name="description" content="정격점과 확인점으로 모터 또는 기어박스 출력축의 TN Curve를 그리고 SVG 또는 PNG로 내려받는 정적 웹 도구입니다.">
+  <title>TN Curve Studio — Motor &amp; Gearbox Torque–Speed Plot</title>
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#workspace">곡선 도구로 바로 가기</a>
+
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="TN Curve Studio 홈">
+      <span class="brand-mark" aria-hidden="true">TN<span class="brand-dot"></span></span>
+      <span class="brand-copy">
+        <strong>Curve Studio</strong>
+        <small>TORQUE–SPEED / DRIVE</small>
+      </span>
+    </a>
+
+    <nav class="topnav" aria-label="주요 메뉴">
+      <span class="server-pill"><span class="server-dot" aria-hidden="true"></span>STATIC · SERVERLESS</span>
+      <a href="#method">계산 방식</a>
+      <a class="github-link" href="https://github.com/dhkima-higenmotor/TN-CURVE" target="_blank" rel="noopener noreferrer">
+        GitHub
+        <svg aria-hidden="true" viewBox="0 0 16 16" width="13" height="13" fill="none">
+          <path d="M5 11 11 5M5 5h6v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="pageTitle">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="eyebrow-rule" aria-hidden="true"></span>MOTOR PERFORMANCE TOOL <span class="eyebrow-index">01</span></p>
+        <h1 id="pageTitle">두 점을 잇는,<br><span class="hero-accent">명확한</span> 성능 곡선.</h1>
+      </div>
+      <div class="hero-aside">
+        <p>모터 단독 또는 기어박스 결합 조건을 선택하세요. 정격점과 확인점을 지나는 직선이 TN Curve로 그려지고, 기어박스의 감속비·효율까지 반영된 출력축 성능을 보여 줍니다.</p>
+        <div class="hero-tags" aria-label="도구 특징">
+          <span>Motor / Gearbox</span>
+          <span>Axis-pinned</span>
+          <span>SVG + PNG</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="workspace" id="workspace" aria-label="TN Curve 생성 도구">
+      <aside class="control-card" aria-labelledby="inputTitle">
+        <div class="panel-heading">
+          <div>
+            <p class="panel-kicker">INPUT DATA <span>02</span></p>
+            <h2 id="inputTitle">곡선 입력</h2>
+          </div>
+          <button class="reset-button" id="resetButton" type="button" aria-label="기본 예제 값으로 초기화">
+            <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
+              <path d="M3.2 6.2A5 5 0 1 1 3 9.5M3.2 6.2V2.8M3.2 6.2H6.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            초기화
+          </button>
+        </div>
+
+        <form id="curveForm" novalidate>
+          <div class="drive-mode" aria-labelledby="driveModeLabel">
+            <div class="drive-mode-head">
+              <span class="field-label" id="driveModeLabel">Drive configuration</span>
+              <span class="drive-mode-tag">CASE</span>
+            </div>
+            <div class="mode-options" role="radiogroup" aria-labelledby="driveModeLabel">
+              <label class="mode-option">
+                <input type="radio" name="driveMode" value="motor" checked>
+                <span class="mode-card"><strong>Motor only</strong><small>모터 단독</small></span>
+              </label>
+              <label class="mode-option">
+                <input type="radio" name="driveMode" value="gearbox">
+                <span class="mode-card"><strong>With gearbox</strong><small>기어박스 결합</small></span>
+              </label>
+            </div>
+            <p class="basis-note" id="basisNote"><span class="basis-dot" aria-hidden="true"></span><span id="basisText">PLOT BASIS · MOTOR SHAFT</span></p>
+          </div>
+
+          <fieldset class="input-group">
+            <legend>
+              <span class="group-index">01</span>
+              <span class="group-title"><strong>Rated point</strong><small>정격 운전점</small></span>
+            </legend>
+            <div class="field-grid">
+              <label class="field" for="ratedTorque">
+                <span class="field-label">Rated torque</span>
+                <span class="input-shell">
+                  <input class="number-input" id="ratedTorque" name="ratedTorque" type="number" inputmode="decimal" min="0" step="any" value="24" autocomplete="off" aria-describedby="formMessage">
+                  <span class="unit" aria-hidden="true">Nm</span>
+                </span>
+              </label>
+              <label class="field" for="ratedSpeed">
+                <span class="field-label">Rated speed</span>
+                <span class="input-shell">
+                  <input class="number-input" id="ratedSpeed" name="ratedSpeed" type="number" inputmode="decimal" min="0" step="any" value="3000" autocomplete="off" aria-describedby="formMessage">
+                  <span class="unit" aria-hidden="true">rpm</span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="input-group">
+            <legend>
+              <span class="group-index">02</span>
+              <span class="group-title"><strong>Check point</strong><small>확인 운전점</small></span>
+            </legend>
+            <div class="field-grid">
+              <label class="field" for="checkTorque">
+                <span class="field-label">Check torque</span>
+                <span class="input-shell">
+                  <input class="number-input" id="checkTorque" name="checkTorque" type="number" inputmode="decimal" min="0" step="any" value="12" autocomplete="off" aria-describedby="formMessage">
+                  <span class="unit" aria-hidden="true">Nm</span>
+                </span>
+              </label>
+              <label class="field" for="checkSpeed">
+                <span class="field-label">Check speed</span>
+                <span class="input-shell">
+                  <input class="number-input" id="checkSpeed" name="checkSpeed" type="number" inputmode="decimal" min="0" step="any" value="3600" autocomplete="off" aria-describedby="formMessage">
+                  <span class="unit" aria-hidden="true">rpm</span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="input-group gearbox-group" id="gearboxGroup" hidden>
+            <legend>
+              <span class="group-index group-index--option">G</span>
+              <span class="group-title"><strong>Gearbox</strong><small>감속기</small></span>
+            </legend>
+            <div class="field-grid">
+              <label class="field" for="gearRatio">
+                <span class="field-label">Reduction ratio</span>
+                <span class="input-shell">
+                  <input class="number-input" id="gearRatio" name="gearRatio" type="number" inputmode="decimal" min="1" step="any" value="10" autocomplete="off" aria-describedby="formMessage">
+                  <span class="unit" aria-hidden="true">: 1</span>
+                </span>
+              </label>
+              <label class="field" for="gearEfficiency">
+                <span class="field-label">Rated efficiency</span>
+                <span class="input-shell">
+                  <input class="number-input" id="gearEfficiency" name="gearEfficiency" type="number" inputmode="decimal" min="0" max="100" step="any" value="95" autocomplete="off" aria-describedby="formMessage">
+                  <span class="unit" aria-hidden="true">%</span>
+                </span>
+              </label>
+            </div>
+            <p class="group-hint">출력 속도 = 모터 속도 ÷ 감속비 · 출력 토크 = 모터 토크 × 감속비 × 효율</p>
+          </fieldset>
+
+          <fieldset class="input-group reference-group">
+            <legend>
+              <span class="group-index">03</span>
+              <span class="group-title"><strong>Reference</strong><small>무부하 속도</small></span>
+            </legend>
+            <label class="field field-wide" for="maxSpeed">
+              <span class="field-label">Max speed @ no load</span>
+              <span class="input-shell">
+                <input class="number-input" id="maxSpeed" name="maxSpeed" type="number" inputmode="decimal" min="0" step="any" value="4200" autocomplete="off" aria-describedby="formMessage">
+                <span class="unit" aria-hidden="true">rpm</span>
+              </span>
+            </label>
+            <p class="group-hint">Max speed 참조값도 선택한 출력축 기준으로 환산됩니다.</p>
+          </fieldset>
+
+          <div class="form-message" id="formMessage" role="status" aria-live="polite" hidden></div>
+        </form>
+
+        <div class="equation-card" aria-label="계산된 직선 방정식">
+          <div class="equation-head">
+            <span>CURVE EQUATION</span>
+            <span class="live-label"><span class="live-dot" aria-hidden="true"></span>LIVE</span>
+          </div>
+          <p class="equation" id="equation">T = 84.0 − 0.02000 × N</p>
+          <p class="equation-note" id="equationNote">Rated + check define the straight line. <span>T [Nm], N [rpm].</span></p>
+        </div>
+      </aside>
+
+      <section class="plot-card" aria-labelledby="plotTitle">
+        <header class="plot-head">
+          <div class="plot-title-group">
+            <p class="panel-kicker">OUTPUT <span>LIVE</span></p>
+            <h2 id="plotTitle">Torque–Speed curve</h2>
+            <p class="plot-sub" id="plotSub">Linear interpolation · motor shaft output · axis-pinned</p>
+          </div>
+          <div class="export-block">
+            <span class="export-label">EXPORT PLOT</span>
+            <div class="download-group" role="group" aria-label="플롯 다운로드 형식">
+              <button class="download-button" type="button" data-format="svg" aria-label="SVG 파일로 플롯 다운로드">
+                <span>SVG</span>
+                <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
+                  <path d="M8 2v8m0 0 3-3m-3 3L5 7M2.5 11.5v1A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <button class="download-button" type="button" data-format="png" aria-label="PNG 파일로 플롯 다운로드">
+                <span>PNG</span>
+                <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
+                  <path d="M8 2v8m0 0 3-3m-3 3L5 7M2.5 11.5v1A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div class="legend" aria-label="플롯 범례">
+          <span class="legend-item"><span class="legend-line legend-line--data" aria-hidden="true"></span>Torque line</span>
+          <span class="legend-item"><span class="legend-line legend-line--300" aria-hidden="true"></span>300% rated</span>
+          <span class="legend-item"><span class="legend-line legend-line--100" aria-hidden="true"></span>100% rated</span>
+          <span class="legend-item"><span class="legend-line legend-line--max" aria-hidden="true"></span>Max speed</span>
+        </div>
+
+        <div class="chart-stage" id="chartStage">
+          <div class="chart-canvas" id="chart">
+            <div class="chart-loading" aria-hidden="true"><span></span>PLOTTING</div>
+          </div>
+          <div class="chart-tooltip" id="chartTooltip" hidden>
+            <span class="tooltip-kicker">ON THE LINE</span>
+            <div class="tooltip-row"><span>Speed</span><strong id="tooltipSpeed">—</strong></div>
+            <div class="tooltip-row"><span>Torque</span><strong id="tooltipTorque">—</strong></div>
+          </div>
+          <noscript><p class="noscript">이 도구는 JavaScript가 필요합니다.</p></noscript>
+        </div>
+
+        <p class="chart-caption">Shaded bands run below each torque guide and stop where the guide meets the curve.</p>
+
+        <div class="metrics" aria-label="곡선 계산 결과">
+          <div class="metric">
+            <span class="metric-label">STALL TORQUE <small>0 rpm</small></span>
+            <strong id="stallTorque">84.0 <span>Nm</span></strong>
+          </div>
+          <div class="metric">
+            <span class="metric-label">ZERO-TORQUE SPEED <small>x-axis</small></span>
+            <strong id="zeroTorqueSpeed">4,200 <span>rpm</span></strong>
+          </div>
+          <div class="metric">
+            <span class="metric-label">MAX SPEED <small>reference</small></span>
+            <strong id="maxSpeedMetric">4,200 <span>rpm</span></strong>
+          </div>
+          <div class="metric">
+            <span class="metric-label">LINE SLOPE <small>per 1k rpm</small></span>
+            <strong id="slopeMetric">−20.0 <span>Nm</span></strong>
+          </div>
+        </div>
+
+        <div class="status-row" id="statusRow" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="statusText">라인의 x절편이 Max speed와 일치합니다.</span>
+        </div>
+      </section>
+    </section>
+
+    <section class="method" id="method" aria-labelledby="methodTitle">
+      <div class="method-intro">
+        <p class="eyebrow"><span class="eyebrow-rule" aria-hidden="true"></span>METHOD <span class="eyebrow-index">03</span></p>
+        <h2 id="methodTitle">No server round-trips.<br>Just geometry.</h2>
+        <p>입력부터 플롯 생성, SVG·PNG 변환까지 모두 브라우저 안에서 실행됩니다. 기어박스 모드에서는 감속비와 효율로 출력축을 환산한 뒤 곡선을 계산합니다. 서버도, 데이터 전송도 없습니다.</p>
+      </div>
+      <div class="method-grid">
+        <article class="method-card">
+          <span class="method-number">01</span>
+          <h3>Interpolate</h3>
+          <p>정격점과 확인점을 지나는 하나의 직선을 계산합니다.</p>
+          <code>m = (T₂ − T₁) / (N₂ − N₁)</code>
+        </article>
+        <article class="method-card">
+          <span class="method-number">02</span>
+          <h3>Pin to axes</h3>
+          <p>직선을 연장해 y축의 토크 절편과 x축의 속도 절편을 찾습니다.</p>
+          <code>T = m·N + b → (0, b), (b / −m, 0)</code>
+        </article>
+        <article class="method-card">
+          <span class="method-number">03</span>
+          <h3>Annotate &amp; export</h3>
+          <p>100%·300% 가이드와 음영을 더하고, 플롯을 벡터·비트맵으로 저장합니다.</p>
+          <code>SVG / PNG</code>
+        </article>
+      </div>
+    </section>
+
+    <section class="privacy-note" aria-label="개인정보 보호">
+      <span class="privacy-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
+          <rect x="4" y="8" width="12" height="9" rx="2" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M7 8V5.8a3 3 0 0 1 6 0V8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <p><strong>Private by design.</strong> 입력값과 생성된 플롯은 이 브라우저를 벗어나지 않습니다.</p>
+      <span class="privacy-meta">STATIC SITE / GITHUB PAGES READY</span>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>© <span id="year">2026</span> TN Curve Studio</p>
+    <p>Built as a static, serverless tool.</p>
+    <a href="#workspace">도구로 돌아가기 ↑</a>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script defer src="./assets/app.js"></script>
+</body>
+</html>

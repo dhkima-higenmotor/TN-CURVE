@@ -1,0 +1,10 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local preview dependencies / output
+node_modules/
+_site/
+*.log
