@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f8fa">
   <meta name="description" content="Plot a motor or gearbox torque–speed curve from a rated point and a check point, then download it as SVG or PNG.">
-  <title>TN Curve — Torque–Speed Curve</title>
+  <title>TN Curve — Torque–Speed Curve (Experimental)</title>
   <link rel="stylesheet" href="./assets/styles.css">
 </head>
 <body>
@@ -32,7 +32,7 @@
 
   <main class="page">
     <div class="page-head">
-      <h1>Torque–Speed Curve</h1>
+      <h1>Torque–Speed Curve (Experimental)</h1>
       <p>Rated and check points define the line. Motor shaft or gearbox output.</p>
     </div>
 
@@ -40,7 +40,10 @@
       <section class="panel" id="inputs" aria-labelledby="inputsTitle">
         <div class="panel-head">
           <h2 id="inputsTitle">Inputs</h2>
-          <button class="btn" id="resetButton" type="button">Reset</button>
+          <div class="panel-actions">
+            <button class="btn" id="noahButton" type="button">NOAH</button>
+            <button class="btn" id="resetButton" type="button">Reset</button>
+          </div>
         </div>
 
         <div class="panel-body">
@@ -203,6 +206,21 @@
     </div>
   </dialog>
 
+  <dialog class="modal modal--wide" id="noahDialog" aria-labelledby="noahTitle">
+    <div class="modal-head">
+      <h2 id="noahTitle">NOAH</h2>
+    </div>
+    <div class="modal-body">
+      <p class="noah-hint">Select a model, then choose OK. Rows with missing data are unavailable.</p>
+      <div class="noah-table-wrap" id="noahTableWrap"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="noahCancel" type="button">Cancel</button>
+      <button class="btn btn-primary" id="noahOk" type="button" disabled>OK</button>
+    </div>
+  </dialog>
+
+  <script defer src="./docs/NOAH-data.js"></script>
   <script defer src="./assets/app.js"></script>
 </body>
 </html>

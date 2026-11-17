@@ -17,10 +17,17 @@ No server or database is required. The tool runs from `index.html` and static as
 - **100%** and **300%** rated-torque guides with shaded bands below them (lighter below 300%, darker below 100%)
 - Reports the x-intercept as max speed at no load
 - Live speed/torque readout while hovering over the curve
+- **NOAH**: reads `docs/NOAH.csv`, lists the models in a dialog, and fills the form from the selected model
 - **CAPTURE**: copies the plot to the clipboard as a PNG for pasting with `Ctrl+V` (`Cmd+V` on macOS)
 - **CAUTION**: explains the limits of the simplified model (no magnetic saturation, temperature, motor/drive/bearing efficiency; gearbox efficiency treated as a constant)
 - **SVG** (vector) and **PNG** (1800 × 1200) downloads
 - Responsive layout, keyboard focus styles, and reduced-motion support
+
+## NOAH model data
+
+The **NOAH** button reads `docs/NOAH.csv` and shows the available models in a table. Select a row and choose **OK** to fill the motor and gearbox inputs. The CSV uses the columns `Development Name`, `Production Name`, `Rated Speed`, `Rated Torque`, `Check Speed`, `Check Torque`, `Ratio`, and `Eff.` (percent).
+
+When the page is opened directly from disk (`file://`), browsers block `fetch`. In that case the app falls back to the bundled `docs/NOAH-data.js`, which is generated from `docs/NOAH.csv`. When the page is served over HTTP, the live CSV is used.
 
 ## Calculation rules
 
@@ -77,7 +84,7 @@ python -m http.server 4173
 
 Open `http://localhost:3000` or `http://localhost:4173`.
 
-> Opening `index.html` directly via `file://` also works, but a local server avoids browser-specific download restrictions.
+> Opening `index.html` directly via `file://` also works; NOAH uses the bundled fallback data, and a local server avoids browser-specific download restrictions.
 
 ## GitHub Pages deployment
 
@@ -92,7 +99,7 @@ https://dhkima-higenmotor.github.io/TN-CURVE/
 
 Workflow: [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)
 
-- The workflow uploads `index.html`, `assets/`, and `.nojekyll` without a build step.
+- The workflow uploads `index.html`, `assets/`, `docs/NOAH.csv`, `docs/NOAH-data.js`, and `.nojekyll` without a build step.
 - The repository root is the deployment unit; no framework or Node runtime is required.
 - To use a custom domain, connect it in the Pages settings.
 
@@ -109,6 +116,8 @@ Workflow: [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.
 │  └─ workflows/
 │     └─ deploy-pages.yml
 ├─ docs/
+│  ├─ NOAH.csv
+│  ├─ NOAH-data.js
 │  └─ preview.png
 ├─ .nojekyll
 ├─ README.md

@@ -60,6 +60,11 @@ const refs = {
   captureButton: document.querySelector("#captureButton"),
   cautionButton: document.querySelector("#cautionButton"),
   cautionDialog: document.querySelector("#cautionDialog"),
+  noahButton: document.querySelector("#noahButton"),
+  noahDialog: document.querySelector("#noahDialog"),
+  noahCancel: document.querySelector("#noahCancel"),
+  noahOk: document.querySelector("#noahOk"),
+  noahTableWrap: document.querySelector("#noahTableWrap"),
   toast: document.querySelector("#toast"),
   year: document.querySelector("#year"),
 };
@@ -69,6 +74,8 @@ const state = {
   chart: null,
   renderWidth: 0,
   busy: false,
+  noahRows: [],
+  noahSelected: -1,
 };
 
 const displayFormatters = {
@@ -965,6 +972,248 @@ function openCaution() {
   }
 }
 
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quoted) {
+      if (character === '"') {
+        if (text[index + 1] === '"') {
+          field += '"';
+          index += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        field += character;
+      }
+    } else if (character === '"') {
+      quoted = true;
+    } else if (character === ",") {
+      row.push(field);
+      field = "";
+    } else if (character === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else if (character !== "\r") {
+      field += character;
+    }
+  }
+
+  if (field !== "" || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  return rows.filter((line) => line.some((value) => value.trim() !== ""));
+}
+
+function readNoahEntries(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return [];
+
+  const headers = rows[0].map((header) => header.replace(/^\uFEFF/, "").trim());
+  const columns = {
+    development: headers.indexOf("Development Name"),
+    production: headers.indexOf("Production Name"),
+    ratedSpeed: headers.indexOf("Rated Speed"),
+    ratedTorque: headers.indexOf("Rated Torque"),
+    checkSpeed: headers.indexOf("Check Speed"),
+    checkTorque: headers.indexOf("Check Torque"),
+    ratio: headers.indexOf("Ratio"),
+    efficiency: headers.indexOf("Eff."),
+  };
+
+  if (Object.values(columns).some((index) => index === -1)) {
+    throw new Error("NOAH.csv is missing required columns");
+  }
+
+  return rows
+    .slice(1)
+    .map((row) => {
+      const read = (key) => {
+        const value = row[columns[key]];
+        return value === undefined ? "" : value.trim();
+      };
+      const entry = {
+        development: read("development"),
+        production: read("production"),
+        ratedSpeed: read("ratedSpeed"),
+        ratedTorque: read("ratedTorque"),
+        checkSpeed: read("checkSpeed"),
+        checkTorque: read("checkTorque"),
+        ratio: read("ratio"),
+        efficiency: read("efficiency"),
+      };
+      entry.complete = [
+        entry.ratedSpeed,
+        entry.ratedTorque,
+        entry.checkSpeed,
+        entry.checkTorque,
+        entry.ratio,
+        entry.efficiency,
+      ].every((value) => value !== "" && Number.isFinite(Number(value)));
+      return entry;
+    })
+    .filter((entry) => entry.development || entry.production);
+}
+
+function setNoahStatus(message, isError = false) {
+  const status = document.createElement("p");
+  status.className = "noah-status";
+  if (isError) status.classList.add("is-error");
+  status.textContent = message;
+  refs.noahTableWrap.replaceChildren(status);
+}
+
+function selectNoahEntry(index) {
+  state.noahSelected = index;
+  refs.noahOk.disabled = false;
+  refs.noahTableWrap.querySelectorAll("tbody tr").forEach((row) => {
+    row.classList.toggle("is-selected", Number(row.dataset.index) === index);
+  });
+}
+
+function renderNoahTable(entries) {
+  const table = document.createElement("table");
+  table.className = "noah-table";
+
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  ["Select", "Development Name", "Production Name", "Rated Speed", "Rated Torque", "Check Speed", "Check Torque", "Ratio", "Eff."].forEach((label) => {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = label;
+    headRow.append(cell);
+  });
+  head.append(headRow);
+  table.append(head);
+
+  const body = document.createElement("tbody");
+  entries.forEach((entry, index) => {
+    const row = document.createElement("tr");
+    row.dataset.index = String(index);
+    if (!entry.complete) {
+      row.classList.add("is-disabled");
+      row.title = "Incomplete data";
+    }
+
+    const selectCell = document.createElement("td");
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "noahSelect";
+    radio.value = String(index);
+    radio.disabled = !entry.complete;
+    radio.setAttribute("aria-label", `Select ${entry.development || entry.production || `row ${index + 1}`}`);
+    selectCell.append(radio);
+    row.append(selectCell);
+
+    const values = [
+      entry.development || "—",
+      entry.production || "—",
+      entry.ratedSpeed || "—",
+      entry.ratedTorque || "—",
+      entry.checkSpeed || "—",
+      entry.checkTorque || "—",
+      entry.ratio || "—",
+      entry.efficiency || "—",
+    ];
+    values.forEach((value, valueIndex) => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      if (valueIndex >= 2) cell.classList.add("num");
+      row.append(cell);
+    });
+
+    if (entry.complete) {
+      row.addEventListener("click", () => {
+        radio.checked = true;
+        selectNoahEntry(index);
+      });
+      radio.addEventListener("change", () => {
+        if (radio.checked) selectNoahEntry(index);
+      });
+    }
+
+    body.append(row);
+  });
+  table.append(body);
+
+  state.noahRows = entries;
+  state.noahSelected = -1;
+  refs.noahOk.disabled = true;
+  refs.noahTableWrap.replaceChildren(table);
+}
+
+async function loadNoahCsv() {
+  if (window.location.protocol !== "file:") {
+    try {
+      const response = await fetch("./docs/NOAH.csv", { cache: "no-store" });
+      if (response.ok) {
+        const text = await response.text();
+        if (text.trim()) return text;
+      }
+    } catch (error) {
+      console.warn("NOAH.csv could not be fetched; using bundled data.", error);
+    }
+  }
+
+  if (typeof window.NOAH_CSV === "string" && window.NOAH_CSV.trim()) {
+    return window.NOAH_CSV;
+  }
+
+  throw new Error("NOAH data is unavailable");
+}
+
+async function openNoahDialog() {
+  if (refs.noahDialog.open) return;
+
+  state.noahRows = [];
+  state.noahSelected = -1;
+  refs.noahOk.disabled = true;
+  setNoahStatus("Loading…");
+  refs.noahDialog.showModal();
+
+  try {
+    const text = await loadNoahCsv();
+    const entries = readNoahEntries(text);
+    if (entries.length === 0) throw new Error("NOAH.csv has no data");
+    renderNoahTable(entries);
+  } catch (error) {
+    console.error(error);
+    setNoahStatus("Could not load the NOAH data. Check docs/NOAH.csv and docs/NOAH-data.js.", true);
+    showToast("Could not load the NOAH data.", true);
+  }
+}
+
+function applyNoahSelection() {
+  const entry = state.noahRows[state.noahSelected];
+  if (!entry || !entry.complete) return;
+
+  refs.noGearbox.checked = false;
+  refs.gearRatio.disabled = false;
+  refs.gearEfficiency.disabled = false;
+
+  document.querySelector("#ratedTorque").value = entry.ratedTorque;
+  document.querySelector("#ratedSpeed").value = entry.ratedSpeed;
+  document.querySelector("#checkTorque").value = entry.checkTorque;
+  document.querySelector("#checkSpeed").value = entry.checkSpeed;
+  refs.gearRatio.value = entry.ratio;
+  refs.gearEfficiency.value = entry.efficiency;
+
+  savedGearbox = { ratio: entry.ratio, efficiency: entry.efficiency };
+  state.renderWidth = 0;
+  update();
+  refs.noahDialog.close();
+  showToast(`Loaded ${entry.development || entry.production}.`);
+}
+
 function svgToPngBlob(svgMarkup) {
   return new Promise((resolve, reject) => {
     const svgBlob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
@@ -1132,6 +1381,12 @@ function bindEvents() {
   refs.cautionButton.addEventListener("click", openCaution);
   refs.cautionDialog.addEventListener("click", (event) => {
     if (event.target === refs.cautionDialog) refs.cautionDialog.close();
+  });
+  refs.noahButton.addEventListener("click", openNoahDialog);
+  refs.noahCancel.addEventListener("click", () => refs.noahDialog.close());
+  refs.noahOk.addEventListener("click", applyNoahSelection);
+  refs.noahDialog.addEventListener("click", (event) => {
+    if (event.target === refs.noahDialog) refs.noahDialog.close();
   });
   refs.downloadButtons.forEach((button) => {
     button.addEventListener("click", () => downloadPlot(button.dataset.format, button));

@@ -17,10 +17,17 @@
 - **100%**·**300%** 정격 토크 가이드와 가이드 아래 음영 (300% 아래는 연한 회색, 100% 아래는 더 진한 회색)
 - x축 절편을 무부하 최대 속도(Max speed at no load)로 표시
 - 그래프 위 마우스 위치의 Speed/Torque 실시간 표시
+- **NOAH**: `docs/NOAH.csv`를 읽어 모델 목록을 표로 보여 주고, 선택한 모델의 파라미터를 폼에 자동 입력
 - **CAPTURE**: 그래프를 PNG 이미지로 클립보드에 복사해 `Ctrl+V`(macOS는 `Cmd+V`)로 붙여넣기
 - **CAUTION**: 단순화 모델의 한계 안내 (자속포화·온도·모터/드라이브/베어링 효율 미반영, 기어박스 효율 상수 취급)
 - **SVG**(벡터) 및 **PNG**(1800 × 1200) 다운로드
 - 반응형 레이아웃, 키보드 포커스, 모션 감소 설정 대응
+
+## NOAH 모델 데이터
+
+**NOAH** 버튼은 `docs/NOAH.csv`를 읽어 사용 가능한 모델을 표로 보여 줍니다. 행을 선택하고 **OK**를 누르면 Motor·Gearbox 입력값이 자동으로 채워집니다. CSV 컬럼은 `Development Name`, `Production Name`, `Rated Speed`, `Rated Torque`, `Check Speed`, `Check Torque`, `Ratio`, `Eff.`(% 단위)입니다.
+
+`index.html`을 디스크에서 직접 열면(`file://`) 브라우저가 `fetch`를 차단하므로, 이때는 `docs/NOAH.csv`에서 생성한 `docs/NOAH-data.js` 번들 데이터를 사용합니다. HTTP로 서빙할 때는 최신 CSV를 직접 읽습니다.
 
 ## 계산 규칙
 
@@ -77,7 +84,7 @@ python -m http.server 4173
 
 `http://localhost:3000` 또는 `http://localhost:4173`을 엽니다.
 
-> `index.html`을 `file://`로 직접 열어도 동작하지만, 브라우저별 다운로드 제한을 피하려면 로컬 서버를 권장합니다.
+> `index.html`을 `file://`로 직접 열어도 동작합니다. NOAH는 번들 데이터를 사용하며, 로컬 서버를 사용하면 브라우저별 다운로드 제한을 피할 수 있습니다.
 
 ## GitHub Pages 배포
 
@@ -92,7 +99,7 @@ https://dhkima-higenmotor.github.io/TN-CURVE/
 
 워크플로: [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)
 
-- 빌드 없이 `index.html`, `assets/`, `.nojekyll`만 artifact로 업로드합니다.
+- 빌드 없이 `index.html`, `assets/`, `docs/NOAH.csv`, `docs/NOAH-data.js`, `.nojekyll`을 artifact로 업로드합니다.
 - 저장소 루트가 배포 단위이며 별도 프레임워크나 Node 런타임이 필요 없습니다.
 - 커스텀 도메인은 Pages 설정에서 연결합니다.
 
@@ -109,6 +116,8 @@ https://dhkima-higenmotor.github.io/TN-CURVE/
 │  └─ workflows/
 │     └─ deploy-pages.yml
 ├─ docs/
+│  ├─ NOAH.csv
+│  ├─ NOAH-data.js
 │  └─ preview.png
 ├─ .nojekyll
 ├─ README.md

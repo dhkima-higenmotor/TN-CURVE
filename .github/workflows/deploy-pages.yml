@@ -34,6 +34,9 @@ jobs:
           cp index.html _site/index.html
           cp -R assets _site/assets
           cp .nojekyll _site/.nojekyll
+          mkdir -p _site/docs
+          cp docs/NOAH.csv _site/docs/NOAH.csv
+          cp docs/NOAH-data.js _site/docs/NOAH-data.js
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
