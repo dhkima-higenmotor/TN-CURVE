@@ -5,7 +5,6 @@ const DEFAULTS = Object.freeze({
   ratedSpeed: 3000,
   checkTorque: 12,
   checkSpeed: 3600,
-  maxSpeed: 4200,
 });
 
 const FIELD_IDS = Object.keys(DEFAULTS);
@@ -21,24 +20,23 @@ const LOGICAL_EXPORT_WIDTH = 1000;
 const LOGICAL_EXPORT_HEIGHT = 667;
 
 const COLORS = Object.freeze({
-  paper: "#fbfaf6",
-  plot: "#f6f3eb",
-  ink: "#191c18",
-  inkSoft: "#3f443d",
-  muted: "#898d82",
-  grid: "#ded9cd",
-  border: "#d8d2c5",
-  accent: "#f15a37",
-  accentDark: "#c84425",
-  green: "#2a6b5b",
-  max: "#687065",
-  guide: "#85897e",
-  fill300: "#e4e1d8",
-  fill100: "#c4c1b8",
-  warning: "#a26627",
+  paper: "#ffffff",
+  plot: "#ffffff",
+  ink: "#1f2328",
+  inkSoft: "#424a53",
+  muted: "#656d76",
+  grid: "#eaeef2",
+  border: "#d0d7de",
+  axis: "#8c959f",
+  accent: "#0969da",
+  green: "#1a7f37",
+  guide: "#8c959f",
+  warning: "#9a6700",
+  fill300: "#f1f4f7",
+  fill100: "#dfe6ed",
 });
 
-const MONO = "'SFMono-Regular', 'Cascadia Mono', Consolas, 'Liberation Mono', monospace";
+const MONO = "ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace";
 
 const refs = {
   form: document.querySelector("#curveForm"),
@@ -47,10 +45,9 @@ const refs = {
   equation: document.querySelector("#equation"),
   equationNote: document.querySelector("#equationNote"),
   plotSub: document.querySelector("#plotSub"),
-  gearboxGroup: document.querySelector("#gearboxGroup"),
-  basisNote: document.querySelector("#basisNote"),
-  basisText: document.querySelector("#basisText"),
-  driveModeInputs: [...document.querySelectorAll('input[name="driveMode"]')],
+  noGearbox: document.querySelector("#noGearbox"),
+  gearRatio: document.querySelector("#gearRatio"),
+  gearEfficiency: document.querySelector("#gearEfficiency"),
   chart: document.querySelector("#chart"),
   chartStage: document.querySelector("#chartStage"),
   chartTooltip: document.querySelector("#chartTooltip"),
@@ -58,11 +55,11 @@ const refs = {
   tooltipTorque: document.querySelector("#tooltipTorque"),
   stallTorque: document.querySelector("#stallTorque"),
   zeroTorqueSpeed: document.querySelector("#zeroTorqueSpeed"),
-  maxSpeedMetric: document.querySelector("#maxSpeedMetric"),
   slopeMetric: document.querySelector("#slopeMetric"),
-  statusRow: document.querySelector("#statusRow"),
-  statusText: document.querySelector("#statusText"),
   downloadButtons: [...document.querySelectorAll("[data-format]")],
+  captureButton: document.querySelector("#captureButton"),
+  cautionButton: document.querySelector("#cautionButton"),
+  cautionDialog: document.querySelector("#cautionDialog"),
   toast: document.querySelector("#toast"),
   year: document.querySelector("#year"),
 };
@@ -87,6 +84,10 @@ const displayFormatters = {
 let updateFrame = 0;
 let resizeFrame = 0;
 let toastTimer = 0;
+let savedGearbox = {
+  ratio: String(GEARBOX_DEFAULTS.gearRatio),
+  efficiency: String(GEARBOX_DEFAULTS.gearEfficiency),
+};
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -170,17 +171,16 @@ function readFormValues() {
     gearbox[id] = raw === "" ? Number.NaN : Number(raw);
   }
 
-  const checkedMode = document.querySelector('input[name="driveMode"]:checked')?.value;
+  const noGearbox = document.querySelector("#noGearbox").checked;
   return {
-    mode: checkedMode === "gearbox" ? "gearbox" : "motor",
     values,
     gearbox,
+    noGearbox,
   };
 }
 
 function analyze(formValues) {
-  const { mode, values: motorValues, gearbox } = formValues;
-  const gearboxEnabled = mode === "gearbox";
+  const { values: motorValues, gearbox, noGearbox } = formValues;
   const errors = [];
   const warnings = [];
   const invalidFields = new Set();
@@ -188,30 +188,30 @@ function analyze(formValues) {
   const missing = FIELD_IDS.filter((id) => !Number.isFinite(motorValues[id]));
   if (missing.length > 0) {
     missing.forEach((id) => invalidFields.add(id));
-    errors.push("모든 모터 입력값을 숫자로 채워 주세요.");
+    errors.push("Enter a number for every motor value.");
   } else {
     const nonPositive = FIELD_IDS.filter((id) => motorValues[id] <= 0);
     if (nonPositive.length > 0) {
       nonPositive.forEach((id) => invalidFields.add(id));
-      errors.push("모든 모터 값은 0보다 커야 합니다.");
+      errors.push("Motor values must be greater than zero.");
     }
   }
 
-  if (gearboxEnabled) {
+  if (!noGearbox) {
     if (!Number.isFinite(gearbox.gearRatio)) {
       invalidFields.add("gearRatio");
-      errors.push("감속비율을 숫자로 입력해 주세요.");
+      errors.push("Enter a reduction ratio.");
     } else if (gearbox.gearRatio < 1) {
       invalidFields.add("gearRatio");
-      errors.push("감속비율은 1 이상이어야 합니다.");
+      errors.push("Reduction ratio must be at least 1.");
     }
 
     if (!Number.isFinite(gearbox.gearEfficiency)) {
       invalidFields.add("gearEfficiency");
-      errors.push("정격효율을 숫자로 입력해 주세요.");
+      errors.push("Enter a rated efficiency.");
     } else if (gearbox.gearEfficiency <= 0 || gearbox.gearEfficiency > 100) {
       invalidFields.add("gearEfficiency");
-      errors.push("정격효율은 0% 초과 100% 이하로 입력해 주세요.");
+      errors.push("Rated efficiency must be greater than 0% and at most 100%.");
     }
   }
 
@@ -223,33 +223,26 @@ function analyze(formValues) {
   let outputValues = null;
 
   if (errors.length === 0) {
-    const ratio = gearboxEnabled ? gearbox.gearRatio : 1;
-    const efficiency = gearboxEnabled ? gearbox.gearEfficiency / 100 : 1;
+    const ratio = noGearbox ? 1 : gearbox.gearRatio;
+    const efficiency = noGearbox ? 1 : gearbox.gearEfficiency / 100;
 
     outputValues = {
       ratedTorque: motorValues.ratedTorque * ratio * efficiency,
       ratedSpeed: motorValues.ratedSpeed / ratio,
       checkTorque: motorValues.checkTorque * ratio * efficiency,
       checkSpeed: motorValues.checkSpeed / ratio,
-      maxSpeed: motorValues.maxSpeed / ratio,
     };
 
-    const {
-      ratedTorque,
-      ratedSpeed,
-      checkTorque,
-      checkSpeed,
-      maxSpeed,
-    } = outputValues;
+    const { ratedTorque, ratedSpeed, checkTorque, checkSpeed } = outputValues;
 
     if (ratedSpeed === checkSpeed) {
-      errors.push("Rated speed와 Check speed는 서로 달라야 합니다.");
+      errors.push("Rated speed and check speed must differ.");
       invalidFields.add("ratedSpeed");
       invalidFields.add("checkSpeed");
     } else {
       slope = (checkTorque - ratedTorque) / (checkSpeed - ratedSpeed);
       if (!Number.isFinite(slope) || slope >= 0) {
-        errors.push("토크는 속도가 증가할수록 감소해야 합니다. 두 포인트의 방향을 확인하세요.");
+        errors.push("Torque must decrease as speed increases. Check the direction of the two points.");
         ["ratedTorque", "ratedSpeed", "checkTorque", "checkSpeed"].forEach((id) => invalidFields.add(id));
         slope = null;
       }
@@ -260,7 +253,7 @@ function analyze(formValues) {
       zeroTorqueSpeed = -intercept / slope;
 
       if (!Number.isFinite(intercept) || !Number.isFinite(zeroTorqueSpeed) || intercept <= 0 || zeroTorqueSpeed <= 0) {
-        errors.push("이 두 포인트로는 양의 축 절편을 만들 수 없습니다. 값을 다시 확인하세요.");
+        errors.push("These points do not produce positive axis intercepts. Check the values.");
         ["ratedTorque", "ratedSpeed", "checkTorque", "checkSpeed"].forEach((id) => invalidFields.add(id));
         slope = null;
       }
@@ -273,28 +266,20 @@ function analyze(formValues) {
       if (threeIntersection) {
         threeSpeed = Math.max(0, (intercept - threeTimesRated) / -slope);
       } else {
-        warnings.push("300% 정격 토크가 0 rpm 토크 절편보다 높아, 300% 가이드가 곡선과 만나지 않습니다.");
-      }
-
-      if (maxSpeed < Math.max(ratedSpeed, checkSpeed)) {
-        warnings.push("Max speed가 운전점보다 낮습니다. 참조값을 확인하세요.");
+        warnings.push("300% rated torque is above the stall torque, so the 300% guide never meets the curve.");
       }
 
       if (threeSpeed !== null && threeSpeed < 1) {
-        warnings.push("300% 가이드가 0 rpm 부근에서만 곡선과 닿습니다.");
+        warnings.push("The 300% guide only touches the curve near 0 rpm.");
       }
     }
   }
 
   const complete = errors.length === 0 && slope !== null;
-  const aligned = complete
-    ? Math.abs(outputValues.maxSpeed - zeroTorqueSpeed) <= Math.max(0.5, outputValues.maxSpeed * 0.005)
-    : false;
 
   return {
-    mode,
-    gearboxEnabled,
-    gearbox: gearboxEnabled
+    noGearbox,
+    gearbox: !noGearbox
       ? { ratio: gearbox.gearRatio, efficiency: gearbox.gearEfficiency }
       : null,
     motorValues,
@@ -309,7 +294,6 @@ function analyze(formValues) {
     threeTimesRated: complete ? outputValues.ratedTorque * 3 : null,
     threeSpeed,
     threeIntersection,
-    aligned,
   };
 }
 
@@ -321,49 +305,41 @@ function scheduleUpdate() {
   });
 }
 
-function syncDriveModeUI(mode) {
-  const gearboxEnabled = mode === "gearbox";
-  refs.gearboxGroup.hidden = !gearboxEnabled;
-  refs.form.classList.toggle("has-gearbox", gearboxEnabled);
-  refs.basisNote.classList.toggle("is-gearbox", gearboxEnabled);
-  refs.basisText.textContent = gearboxEnabled
-    ? "MOTOR INPUTS → GEARBOX OUTPUT"
-    : "PLOT BASIS · MOTOR SHAFT";
-}
-
 function updatePlotContext(analysis) {
-  if (analysis.complete && analysis.gearboxEnabled) {
-    const ratio = formatPlain(analysis.gearbox.ratio);
-    const efficiency = formatPlain(analysis.gearbox.efficiency);
-    refs.plotSub.textContent = `Gearbox output · ${ratio}:1 reduction · η ${efficiency}% · axis-pinned`;
+  if (analysis.noGearbox) {
+    refs.plotSub.textContent = "Motor shaft · no gearbox";
     return;
   }
 
-  refs.plotSub.textContent = "Linear interpolation · motor shaft output · axis-pinned";
+  if (analysis.gearbox) {
+    const ratio = formatPlain(analysis.gearbox.ratio);
+    const efficiency = formatPlain(analysis.gearbox.efficiency);
+    refs.plotSub.textContent = `Gearbox output · ${ratio}:1 reduction · η ${efficiency}%`;
+    return;
+  }
+
+  refs.plotSub.textContent = "Motor shaft";
 }
 
 function update() {
   const formValues = readFormValues();
-  syncDriveModeUI(formValues.mode);
   const analysis = analyze(formValues);
   state.analysis = analysis;
 
   ALL_FIELD_IDS.forEach((id) => {
     const input = document.querySelector(`#${id}`);
-    const invalid = analysis.invalidFields.has(id);
-    if (invalid) input.setAttribute("aria-invalid", "true");
+    if (analysis.invalidFields.has(id)) input.setAttribute("aria-invalid", "true");
     else input.removeAttribute("aria-invalid");
   });
 
   updateFormMessage(analysis);
-  updateStatus(analysis);
   updatePlotContext(analysis);
 
   if (!analysis.complete) {
     state.chart = null;
     updateEquation(null);
     updateMetrics(analysis);
-    renderChartError(analysis.errors[0] || "플롯을 그릴 수 없습니다.");
+    renderChartError(analysis.errors[0] || "The curve cannot be plotted.");
     setDownloadsEnabled(false);
     hideTooltip();
     return;
@@ -395,83 +371,43 @@ function updateFormMessage(analysis) {
   refs.formMessage.classList.toggle("is-warning", analysis.errors.length === 0);
 }
 
-function updateStatus(analysis) {
-  refs.statusRow.classList.remove("is-warning", "is-error");
-
-  if (!analysis.complete) {
-    refs.statusText.textContent = analysis.errors[0] || "입력값을 확인해 주세요.";
-    refs.statusRow.classList.add("is-error");
-    return;
-  }
-
-  if (analysis.warnings.length > 0) {
-    refs.statusText.textContent = analysis.warnings[0];
-    refs.statusRow.classList.add("is-warning");
-    return;
-  }
-
-  if (analysis.aligned) {
-    refs.statusText.textContent = `라인의 x절편이 Max speed ${formatSpeed(analysis.values.maxSpeed)} rpm과 일치합니다.`;
-    return;
-  }
-
-  const delta = analysis.zeroTorqueSpeed - analysis.values.maxSpeed;
-  const relation = delta > 0 ? "높습니다" : "낮습니다";
-  refs.statusText.textContent = `라인의 x절편은 ${formatSpeed(analysis.zeroTorqueSpeed)} rpm으로, Max speed보다 ${formatSpeed(Math.abs(delta))} rpm ${relation}.`;
-}
-
 function updateEquation(analysis) {
   if (!analysis) {
     refs.equation.textContent = "—";
-    refs.equationNote.textContent = "Rated + check define the straight line. T [Nm], N [rpm].";
+    refs.equationNote.textContent = "T [Nm] · N [rpm]";
     return;
   }
 
   const slopeMagnitude = coefficient(Math.abs(analysis.slope));
   refs.equation.textContent = `T = ${formatTorque(analysis.intercept)} − ${slopeMagnitude} × N`;
 
-  if (analysis.gearboxEnabled) {
-    refs.equationNote.textContent = `Output-shaft basis · N ÷ ${formatPlain(analysis.gearbox.ratio)} · T × ${formatPlain(analysis.gearbox.ratio)} × ${formatPlain(analysis.gearbox.efficiency)}%`;
+  if (analysis.noGearbox) {
+    refs.equationNote.textContent = "Motor shaft · no gearbox";
+  } else if (analysis.gearbox) {
+    refs.equationNote.textContent = `Output shaft · N ÷ ${formatPlain(analysis.gearbox.ratio)} · T × ${formatPlain(analysis.gearbox.ratio)} × ${formatPlain(analysis.gearbox.efficiency)}%`;
   } else {
-    refs.equationNote.textContent = "Rated + check define the straight line. T [Nm], N [rpm].";
+    refs.equationNote.textContent = "T [Nm] · N [rpm]";
   }
 }
 
 function updateMetrics(analysis) {
   if (!analysis.complete) {
     refs.stallTorque.innerHTML = "—";
-    refs.zeroTorqueSpeed.innerHTML = "—";
-    refs.maxSpeedMetric.innerHTML = `— <span>rpm</span>`;
+    refs.zeroTorqueSpeed.innerHTML = `— <span>rpm</span>`;
     refs.slopeMetric.innerHTML = "—";
     return;
   }
 
   refs.stallTorque.innerHTML = `${formatTorque(analysis.intercept)} <span>Nm</span>`;
   refs.zeroTorqueSpeed.innerHTML = `${formatSpeed(analysis.zeroTorqueSpeed)} <span>rpm</span>`;
-  refs.maxSpeedMetric.innerHTML = `${formatSpeed(analysis.values.maxSpeed)} <span>rpm</span>`;
   refs.slopeMetric.innerHTML = `${formatTorque(analysis.slope * 1000)} <span>Nm</span>`;
-  refs.maxSpeedMetric.setAttribute(
-    "title",
-    analysis.gearboxEnabled
-      ? "Max speed at no load, converted to the gearbox output shaft"
-      : "Max speed at no load — reference from the motor-shaft input",
-  );
 }
 
 function renderChartError(message) {
   hideTooltip();
   refs.chart.innerHTML = `
-    <div class="chart-empty" role="img" aria-label="플롯을 표시할 수 없습니다">
-      <div class="chart-empty-mark" aria-hidden="true">
-        <svg viewBox="0 0 64 64" width="64" height="64" fill="none">
-          <path d="M9 9v46h46" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          <path d="M9 45 24 31l9 6L54 18" stroke="currentColor" stroke-width="1.4" stroke-dasharray="4 5" stroke-linecap="round" opacity=".45"/>
-          <circle cx="55" cy="55" r="8" fill="#fbfaf6" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M55 50v6M55 59v.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-        </svg>
-      </div>
-      <p class="chart-empty-kicker">PLOT UNAVAILABLE</p>
-      <strong>입력값을 조정해 주세요.</strong>
+    <div class="chart-empty" role="img" aria-label="Plot unavailable">
+      <strong>Plot unavailable</strong>
       <p class="chart-empty-message"></p>
     </div>`;
   refs.chart.querySelector(".chart-empty-message").textContent = message;
@@ -484,7 +420,7 @@ function renderChart() {
   if (width < 80) return;
 
   const compact = width < 760;
-  const height = Math.round(clamp(width * 0.72, compact ? 460 : 580, 700));
+  const height = Math.round(clamp(width * 0.64, compact ? 400 : 500, 640));
   state.renderWidth = width;
   state.chart = buildChart(state.analysis, {
     width,
@@ -530,16 +466,15 @@ function buildChart(analysis, options) {
     compact = false,
     pixelWidth = width,
     pixelHeight = height,
-    exportMode = false,
   } = options;
 
   const mini = width < 420;
-  const ui = width < 760 ? 0.94 : clamp(width / 900, 1, 1.12);
+  const scale = width < 760 ? 1 : clamp(width / 1100, 1, 1.12);
   const margins = {
-    left: compact ? 70 : 100,
-    right: compact ? 18 : 38,
-    top: compact ? 68 : 82,
-    bottom: compact ? 82 : 90,
+    left: compact ? 64 : 78,
+    right: compact ? 16 : 26,
+    top: compact ? 28 : 34,
+    bottom: compact ? 62 : 72,
   };
   const plotLeft = margins.left;
   const plotTop = margins.top;
@@ -549,21 +484,17 @@ function buildChart(analysis, options) {
   const plotHeight = plotBottom - plotTop;
 
   const font = {
-    tick: 19.5 * ui,
-    axisTitle: 17 * ui,
-    meta: 13.5 * ui,
-    guide: 15 * ui,
-    max: 15.5 * ui,
-    pointTitle: 14 * ui,
-    pointValue: 18 * ui,
-    pointCompact: 16 * ui,
-    watermark: 12 * ui,
+    tick: 16 * scale,
+    axisTitle: 16 * scale,
+    guide: 16 * scale,
+    pointTitle: 16 * scale,
+    pointValue: 17 * scale,
   };
 
   const { values, intercept, slope, zeroTorqueSpeed, threeTimesRated, threeSpeed } = analysis;
   const t3 = threeTimesRated;
-  const xMax = Math.max(zeroTorqueSpeed, values.maxSpeed, values.ratedSpeed, values.checkSpeed) * 1.045;
-  const yMax = Math.max(intercept, t3, values.ratedTorque * 1.2) * 1.075;
+  const xMax = Math.max(zeroTorqueSpeed, values.ratedSpeed, values.checkSpeed) * 1.06;
+  const yMax = Math.max(intercept, t3, values.ratedTorque * 1.2) * 1.08;
   const xTickData = makeTicks(xMax, compact ? (width < 420 ? 4 : 5) : 6);
   const yTickData = makeTicks(yMax, 5);
 
@@ -574,84 +505,90 @@ function buildChart(analysis, options) {
   const ratedY = mapY(values.ratedTorque);
   const checkX = mapX(values.checkSpeed);
   const checkY = mapY(values.checkTorque);
-  const ratedGuideX = mapX(values.ratedSpeed);
-  const ratedGuideY = mapY(values.ratedTorque);
+  const ratedGuideX = ratedX;
+  const ratedGuideY = ratedY;
   const threeGuideY = mapY(t3);
   const threeGuideX = threeSpeed !== null ? mapX(Math.max(0, threeSpeed)) : null;
-  const maxX = mapX(values.maxSpeed);
 
-  const pointLabels = [];
+  const ratedGuideFullText = "100% RATED";
+  const ratedGuideShortText = "100%";
+  const ratedGuideCanUseFull = ratedGuideX - 12 - ratedGuideFullText.length * font.guide * 0.62 >= plotLeft + 4;
+  const ratedGuideText = mini || !ratedGuideCanUseFull ? ratedGuideShortText : ratedGuideFullText;
+  const ratedGuideWidth = ratedGuideText.length * font.guide * 0.62;
+  const placeRatedGuideBelow = ratedGuideY + 26 <= plotBottom
+    && ratedGuideX - 12 - ratedGuideWidth >= plotLeft + 4;
+  const ratedGuideLabelY = placeRatedGuideBelow
+    ? ratedGuideY + 22
+    : Math.max(ratedGuideY - 7, plotTop + font.guide);
+  const ratedGuideLabelX = placeRatedGuideBelow ? ratedGuideX - 12 : plotLeft + 6;
+  const ratedGuideLabelAnchor = placeRatedGuideBelow ? "end" : "start";
+  const ratedGuideLabelBox = {
+    x: placeRatedGuideBelow ? ratedGuideLabelX - ratedGuideWidth : ratedGuideLabelX,
+    y: ratedGuideLabelY - font.guide * 0.8,
+    width: ratedGuideWidth + 4,
+    height: font.guide + 4,
+  };
+
   const ratedTorqueLabel = `${formatTorque(values.ratedTorque)} Nm`;
   const ratedSpeedLabel = `${formatSpeed(values.ratedSpeed)} rpm`;
   const checkTorqueLabel = `${formatTorque(values.checkTorque)} Nm`;
   const checkSpeedLabel = `${formatSpeed(values.checkSpeed)} rpm`;
   const pointPlot = { left: plotLeft, right: plotRight, top: plotTop, bottom: plotBottom };
-  const ratedLabel = mini
-    ? miniPointLabel({
-        x: ratedX,
-        y: ratedY,
-        title: "RATED",
-        color: COLORS.accent,
-        font,
-        plot: pointPlot,
-        preferred: "above",
-      })
-    : placePointLabel({
-        x: ratedX,
-        y: ratedY,
-        title: "RATED",
-        torqueLabel: ratedTorqueLabel,
-        speedLabel: ratedSpeedLabel,
-        color: COLORS.accent,
-        compact,
-        font,
-        plot: pointPlot,
-        preferred: "above",
-        otherBoxes: [],
-      });
-  pointLabels.push(ratedLabel);
-
-  const checkLabel = mini
-    ? miniPointLabel({
-        x: checkX,
-        y: checkY,
-        title: "CHECK",
-        color: COLORS.green,
-        font,
-        plot: pointPlot,
-        preferred: "below",
-      })
-    : placePointLabel({
-        x: checkX,
-        y: checkY,
-        title: "CHECK",
-        torqueLabel: checkTorqueLabel,
-        speedLabel: checkSpeedLabel,
-        color: COLORS.green,
-        compact,
-        font,
-        plot: pointPlot,
-        preferred: "below",
-        otherBoxes: [ratedLabel.box],
-        leftAtEdge: true,
-      });
-  pointLabels.push(checkLabel);
-
-  const fills = [];
+  const curveLine = {
+    x1: plotLeft,
+    y1: mapY(intercept),
+    x2: mapX(zeroTorqueSpeed),
+    y2: plotBottom,
+  };
+  const ratedMarker = { x: ratedX - 7, y: ratedY - 7, width: 14, height: 14 };
+  const checkMarker = { x: checkX - 7, y: checkY - 7, width: 14, height: 14 };
+  const guideObstacles = [
+    { x: plotLeft, y: ratedGuideY - 1, width: ratedGuideX - plotLeft, height: 2 },
+    ratedGuideLabelBox,
+  ];
   if (threeGuideX !== null) {
-    fills.push(
-      `<path d="M ${plotLeft} ${plotBottom} L ${threeGuideX} ${plotBottom} L ${threeGuideX} ${threeGuideY} L ${plotLeft} ${threeGuideY} Z" fill="${COLORS.fill300}" />`,
-    );
+    guideObstacles.push({ x: plotLeft, y: threeGuideY - 1, width: threeGuideX - plotLeft, height: 2 });
   }
-  fills.push(
-    `<path d="M ${plotLeft} ${plotBottom} L ${ratedGuideX} ${plotBottom} L ${ratedGuideX} ${ratedGuideY} L ${plotLeft} ${ratedGuideY} Z" fill="${COLORS.fill100}" />`,
-  );
+
+  const ratedLabel = pointAnnotation({
+    x: ratedX,
+    y: ratedY,
+    title: "RATED",
+    speedLabel: ratedSpeedLabel,
+    torqueLabel: ratedTorqueLabel,
+    color: COLORS.accent,
+    compact,
+    mini,
+    font,
+    plot: pointPlot,
+    preferred: "above",
+    obstacles: [...guideObstacles, checkMarker],
+    curve: curveLine,
+  });
+
+  const checkLabel = pointAnnotation({
+    x: checkX,
+    y: checkY,
+    title: "CHECK",
+    speedLabel: checkSpeedLabel,
+    torqueLabel: checkTorqueLabel,
+    color: COLORS.green,
+    compact,
+    mini,
+    font,
+    plot: pointPlot,
+    preferred: "below",
+    obstacles: [...guideObstacles, ratedMarker, ratedLabel.rect],
+    curve: curveLine,
+  });
+
+  const pointMarkup = ratedLabel.svg + checkLabel.svg;
 
   const verticalGrid = xTickData
     .filter((tick) => tick.value > 0)
     .map(
       (tick) =>
-        `<line x1="${mapX(tick.value)}" y1="${plotTop}" x2="${mapX(tick.value)}" y2="${plotBottom}" stroke="${COLORS.grid}" stroke-width="1" opacity=".7" />`,
+        `<line x1="${mapX(tick.value)}" y1="${plotTop}" x2="${mapX(tick.value)}" y2="${plotBottom}" stroke="${COLORS.grid}" stroke-width="1" />`,
     )
     .join("");
 
@@ -659,7 +596,7 @@ function buildChart(analysis, options) {
     .filter((tick) => tick.value > 0)
     .map(
       (tick) =>
-        `<line x1="${plotLeft}" y1="${mapY(tick.value)}" x2="${plotRight}" y2="${mapY(tick.value)}" stroke="${COLORS.grid}" stroke-width="1" opacity=".7" />`,
+        `<line x1="${plotLeft}" y1="${mapY(tick.value)}" x2="${plotRight}" y2="${mapY(tick.value)}" stroke="${COLORS.grid}" stroke-width="1" />`,
     )
     .join("");
 
@@ -670,8 +607,8 @@ function buildChart(analysis, options) {
         ? formatCompactAxisValue(tick.value, tick.step)
         : formatAxisValue(tick.value, tick.step);
       return `
-        <line x1="${x}" y1="${plotBottom}" x2="${x}" y2="${plotBottom + 5}" stroke="${COLORS.inkSoft}" stroke-width="1.2" />
-        <text x="${x}" y="${plotBottom + (compact ? 25 : 28)}" text-anchor="middle" class="chart-tick">${tickLabel}</text>`;
+        <line x1="${x}" y1="${plotBottom}" x2="${x}" y2="${plotBottom + 5}" stroke="${COLORS.axis}" stroke-width="1" />
+        <text x="${x}" y="${plotBottom + (compact ? 24 : 27)}" text-anchor="middle" class="chart-tick">${tickLabel}</text>`;
     })
     .join("");
 
@@ -679,160 +616,110 @@ function buildChart(analysis, options) {
     .map((tick) => {
       const y = mapY(tick.value);
       return `
-        <line x1="${plotLeft - 5}" y1="${y}" x2="${plotLeft}" y2="${y}" stroke="${COLORS.inkSoft}" stroke-width="1.2" />
-        ${tick.value > 0 ? `<text x="${plotLeft - (compact ? 10 : 13)}" y="${y + font.tick * 0.34}" text-anchor="end" class="chart-tick">${formatAxisValue(tick.value, tick.step)}</text>` : ""}`;
+        <line x1="${plotLeft - 5}" y1="${y}" x2="${plotLeft}" y2="${y}" stroke="${COLORS.axis}" stroke-width="1" />
+        ${tick.value > 0 ? `<text x="${plotLeft - (compact ? 9 : 12)}" y="${y + font.tick * 0.34}" text-anchor="end" class="chart-tick">${formatAxisValue(tick.value, tick.step)}</text>` : ""}`;
     })
     .join("");
 
   const guideLabels = [];
+  const threeLabelY = Math.max(threeGuideY - 7, plotTop + font.guide);
   if (threeGuideX !== null) {
-    const text = mini
-      ? "300%"
-      : compact
-        ? `300% · ${formatTorque(t3)} Nm`
-        : `300% RATED · ${formatTorque(t3)} Nm`;
     guideLabels.push(
-      guideLabel({
-        text,
-        x: plotLeft + 6,
-        y: threeGuideY,
+      guideText({
+        text: mini ? "300%" : "300% RATED",
+        x: threeGuideX + 8,
+        y: threeLabelY,
+        anchor: "start",
         font,
         color: COLORS.guide,
-        topBoundary: plotTop + 4,
+        maxX: plotRight - 4,
       }),
     );
   } else {
     guideLabels.push(`
-      <line x1="${plotLeft}" y1="${threeGuideY}" x2="${plotRight}" y2="${threeGuideY}" stroke="${COLORS.warning}" stroke-width="1.5" stroke-dasharray="3 7" stroke-linecap="round" opacity=".8" />
-      ${guideLabel({
-        text: compact ? "300% · ABOVE CURVE" : "300% RATED · ABOVE CURVE",
+      <line x1="${plotLeft}" y1="${threeGuideY}" x2="${plotRight}" y2="${threeGuideY}" stroke="${COLORS.warning}" stroke-width="1.5" stroke-dasharray="4 6" stroke-linecap="round" opacity=".85" />
+      ${guideText({
+        text: mini ? "300% · ABOVE CURVE" : "300% RATED · ABOVE CURVE",
         x: plotLeft + 6,
-        y: threeGuideY,
+        y: threeLabelY,
+        anchor: "start",
         font,
         color: COLORS.warning,
-        topBoundary: plotTop + 4,
+        maxX: plotRight - 4,
       })}
     `);
   }
 
-  const ratedGuideText = mini
-    ? "100%"
-    : compact
-      ? `100% · ${formatTorque(values.ratedTorque)} Nm`
-      : `100% RATED · ${formatTorque(values.ratedTorque)} Nm`;
   guideLabels.push(
-    guideLabel({
+    guideText({
       text: ratedGuideText,
-      x: plotLeft + 6,
-      y: ratedGuideY,
+      x: ratedGuideLabelX,
+      y: ratedGuideLabelY,
+      anchor: ratedGuideLabelAnchor,
       font,
       color: COLORS.inkSoft,
-      topBoundary: plotTop + 4,
+      maxX: plotRight - 4,
     }),
   );
 
-  const maxLabel = compact
-    ? `MAX · ${formatSpeed(values.maxSpeed)} rpm`
-    : `MAX SPEED @ NO LOAD · ${formatSpeed(values.maxSpeed)} rpm`;
-  const maxLabelAnchor = maxX > plotLeft + plotWidth * 0.62 ? "end" : "start";
-  const maxLabelX = maxX + (maxLabelAnchor === "end" ? -6 : 6);
-  const maxLabelY = plotTop - 12;
+  const fills = [];
+  if (threeGuideX !== null) {
+    fills.push(`<path d="M ${plotLeft} ${plotBottom} L ${threeGuideX} ${plotBottom} L ${threeGuideX} ${threeGuideY} L ${plotLeft} ${threeGuideY} Z" fill="${COLORS.fill300}" />`);
+  }
+  fills.push(`<path d="M ${plotLeft} ${plotBottom} L ${ratedGuideX} ${plotBottom} L ${ratedGuideX} ${ratedGuideY} L ${plotLeft} ${ratedGuideY} Z" fill="${COLORS.fill100}" />`);
 
-  const pointMarkup = pointLabels
-    .map((label) => {
-      const { box, point } = label;
-      if (!box) return label.svg;
-      const leader = `<line x1="${point.x}" y1="${point.y}" x2="${clamp(point.x, box.x, box.x + box.width)}" y2="${clamp(point.y, box.y, box.y + box.height)}" stroke="${label.color}" stroke-width="1.2" opacity=".42" />`;
-      return `${leader}${label.svg}`;
-    })
-    .join("");
-
-  const watermark = exportMode
-    ? `<text x="${plotRight}" y="${height - 10}" text-anchor="end" class="chart-watermark">TN CURVE STUDIO · STATIC / SERVERLESS · ${new Date().getFullYear()}</text>`
-    : "";
-
-  const gearboxMeta = analysis.gearboxEnabled
-    ? `GEARBOX ${formatPlain(analysis.gearbox.ratio)}:1 · η ${formatPlain(analysis.gearbox.efficiency)}%`
-    : null;
-  const basisTitle = analysis.gearboxEnabled ? "Gearbox output — " : "Motor shaft — ";
+  const basisTitle = analysis.noGearbox ? "Motor shaft — " : "Gearbox output — ";
   const title = `${basisTitle}TN Curve — ${formatTorque(values.ratedTorque)} Nm @ ${formatSpeed(values.ratedSpeed)} rpm to ${formatTorque(values.checkTorque)} Nm @ ${formatSpeed(values.checkSpeed)} rpm`;
-  const basisDescription = analysis.gearboxEnabled
-    ? ` Gearbox output basis. Reduction ratio ${formatPlain(analysis.gearbox.ratio)} to 1; rated efficiency ${formatPlain(analysis.gearbox.efficiency)} percent.`
-    : " Motor shaft basis.";
-  const description = `Torque-speed curve. Stall torque ${formatTorque(intercept)} Nm at 0 rpm; zero-torque speed ${formatSpeed(zeroTorqueSpeed)} rpm. Rated torque guide ${formatTorque(values.ratedTorque)} Nm; 300 percent guide ${formatTorque(t3)} Nm. Max speed at no load ${formatSpeed(values.maxSpeed)} rpm.${basisDescription}`;
-  const metaLeft = exportMode ? "TN CURVE / TORQUE–SPEED ENVELOPE" : "TN CURVE / FIG. 01";
-  const metaRight = analysis.gearboxEnabled
-    ? `OUTPUT SHAFT · ${gearboxMeta}`
-    : exportMode
-      ? "MOTOR SHAFT · AXIS-PINNED"
-      : "MOTOR SHAFT · LINEAR";
+  const basisDescription = analysis.noGearbox
+    ? " Motor shaft basis. No gearbox; ratio 1, efficiency 100 percent."
+    : ` Gearbox output basis. Reduction ratio ${formatPlain(analysis.gearbox.ratio)} to 1; rated efficiency ${formatPlain(analysis.gearbox.efficiency)} percent.`;
+  const description = `Torque-speed curve. Stall torque ${formatTorque(intercept)} Nm at 0 rpm; max speed at no load ${formatSpeed(zeroTorqueSpeed)} rpm. Rated torque guide ${formatTorque(values.ratedTorque)} Nm; 300 percent guide ${formatTorque(t3)} Nm.${basisDescription}`;
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${pixelWidth}" height="${pixelHeight}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="tnCurveTitle tnCurveDesc">
     <title id="tnCurveTitle">${escapeXML(title)}</title>
     <desc id="tnCurveDesc">${escapeXML(description)}</desc>
     <style>
-      .chart-meta { font-family: ${MONO}; font-size: ${font.meta}px; font-weight: 600; fill: ${COLORS.muted}; letter-spacing: .085em; }
-      .chart-meta-accent { fill: ${COLORS.inkSoft}; }
       .chart-tick { font-family: ${MONO}; font-size: ${font.tick}px; fill: ${COLORS.muted}; font-variant-numeric: tabular-nums; }
-      .chart-axis-title { font-family: ${MONO}; font-size: ${font.axisTitle}px; fill: ${COLORS.inkSoft}; font-weight: 600; letter-spacing: .12em; }
-      .chart-guide-label { font-family: ${MONO}; font-size: ${font.guide}px; font-weight: 600; letter-spacing: .015em; }
-      .chart-max-label { font-family: ${MONO}; font-size: ${font.max}px; font-weight: 600; fill: ${COLORS.max}; letter-spacing: .035em; }
-      .chart-point-title { font-family: ${MONO}; font-size: ${font.pointTitle}px; font-weight: 700; letter-spacing: .09em; }
-      .chart-point-value { font-family: ${MONO}; font-size: ${font.pointValue}px; font-weight: 600; fill: ${COLORS.ink}; font-variant-numeric: tabular-nums; }
-      .chart-point-compact { font-family: ${MONO}; font-size: ${font.pointCompact}px; font-weight: 700; letter-spacing: .03em; }
-      .chart-point-mini { font-family: ${MONO}; font-size: ${font.pointTitle}px; font-weight: 700; letter-spacing: .06em; paint-order: stroke; }
-      .chart-watermark { font-family: ${MONO}; font-size: ${font.watermark}px; fill: ${COLORS.muted}; letter-spacing: .06em; }
+      .chart-axis-title { font-family: ${MONO}; font-size: ${font.axisTitle}px; fill: ${COLORS.inkSoft}; font-weight: 600; letter-spacing: .08em; }
+      .chart-guide-label { font-family: ${MONO}; font-size: ${font.guide}px; font-weight: 600; letter-spacing: .02em; paint-order: stroke; stroke: ${COLORS.paper}; stroke-width: 3px; stroke-linejoin: round; }
+      .chart-point-title { font-family: ${MONO}; font-size: ${font.pointTitle}px; font-weight: 700; letter-spacing: .05em; paint-order: stroke; stroke: ${COLORS.paper}; stroke-width: 3.5px; stroke-linejoin: round; }
+      .chart-point-value { font-family: ${MONO}; font-size: ${font.pointValue}px; font-weight: 600; fill: ${COLORS.ink}; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: ${COLORS.paper}; stroke-width: 3.5px; stroke-linejoin: round; }
       .chart-hit { cursor: crosshair; }
     </style>
     <rect width="${width}" height="${height}" fill="${COLORS.paper}" />
-    <rect x="${plotLeft}" y="${plotTop}" width="${plotWidth}" height="${plotHeight}" rx="1" fill="${COLORS.plot}" stroke="${COLORS.border}" stroke-width="1.1" />
+    <rect x="${plotLeft}" y="${plotTop}" width="${plotWidth}" height="${plotHeight}" fill="${COLORS.plot}" stroke="${COLORS.border}" stroke-width="1" />
     <g aria-hidden="true">${fills.join("")}</g>
     <g aria-hidden="true">${verticalGrid}${horizontalGrid}</g>
-    <line x1="${plotLeft}" y1="${threeGuideY}" x2="${threeGuideX ?? plotRight}" y2="${threeGuideY}" stroke="${COLORS.guide}" stroke-width="1.5" stroke-dasharray="3 7" stroke-linecap="round" opacity="${threeGuideX !== null ? ".95" : "0"}" />
-    <line x1="${plotLeft}" y1="${ratedGuideY}" x2="${ratedGuideX}" y2="${ratedGuideY}" stroke="${COLORS.inkSoft}" stroke-width="1.5" stroke-dasharray="3 7" stroke-linecap="round" />
+    <line x1="${plotLeft}" y1="${threeGuideY}" x2="${threeGuideX ?? plotRight}" y2="${threeGuideY}" stroke="${COLORS.guide}" stroke-width="1.5" stroke-dasharray="4 6" stroke-linecap="round" opacity="${threeGuideX !== null ? ".9" : "0"}" />
+    <line x1="${plotLeft}" y1="${ratedGuideY}" x2="${ratedGuideX}" y2="${ratedGuideY}" stroke="${COLORS.inkSoft}" stroke-width="1.5" stroke-dasharray="4 6" stroke-linecap="round" />
     ${threeGuideX !== null ? `<circle cx="${threeGuideX}" cy="${threeGuideY}" r="3" fill="${COLORS.paper}" stroke="${COLORS.guide}" stroke-width="1.2" />` : ""}
     <circle cx="${ratedGuideX}" cy="${ratedGuideY}" r="3" fill="${COLORS.paper}" stroke="${COLORS.inkSoft}" stroke-width="1.2" />
+    <line x1="${plotLeft}" y1="${mapY(intercept)}" x2="${mapX(zeroTorqueSpeed)}" y2="${mapY(0)}" stroke="${COLORS.ink}" stroke-width="2.6" stroke-linecap="round" />
     <g aria-hidden="true">
-      <line x1="${maxX}" y1="${plotTop}" x2="${maxX}" y2="${plotBottom}" stroke="${COLORS.max}" stroke-width="1.4" stroke-dasharray="4 8" opacity=".85" />
-      <circle cx="${maxX}" cy="${plotTop}" r="3.5" fill="${COLORS.paper}" stroke="${COLORS.max}" stroke-width="1.3" />
-      <text x="${maxLabelX}" y="${maxLabelY}" text-anchor="${maxLabelAnchor}" class="chart-max-label">${escapeXML(maxLabel)}</text>
+      <circle cx="${plotLeft}" cy="${mapY(intercept)}" r="4" fill="${COLORS.paper}" stroke="${COLORS.ink}" stroke-width="1.6" />
+      <circle cx="${mapX(zeroTorqueSpeed)}" cy="${plotBottom}" r="4" fill="${COLORS.paper}" stroke="${COLORS.ink}" stroke-width="1.6" />
     </g>
     <g aria-hidden="true">
-      <line x1="${plotLeft}" y1="${mapY(intercept)}" x2="${plotRight}" y2="${mapY(intercept)}" stroke="${COLORS.paper}" stroke-width="0" />
-      <line x1="${plotLeft}" y1="${mapY(intercept)}" x2="${mapX(zeroTorqueSpeed)}" y2="${mapY(0)}" stroke="${COLORS.paper}" stroke-width="9.5" opacity=".85" stroke-linecap="round" />
-      <line x1="${plotLeft}" y1="${mapY(intercept)}" x2="${mapX(zeroTorqueSpeed)}" y2="${mapY(0)}" stroke="${COLORS.ink}" stroke-width="3.4" stroke-linecap="round" />
-    </g>
-    <g aria-hidden="true">
-      <circle cx="${plotLeft}" cy="${mapY(intercept)}" r="4.2" fill="${COLORS.paper}" stroke="${COLORS.ink}" stroke-width="1.7" />
-      <circle cx="${mapX(zeroTorqueSpeed)}" cy="${plotBottom}" r="4.2" fill="${COLORS.paper}" stroke="${COLORS.ink}" stroke-width="1.7" />
-    </g>
-    <g class="plot-axis" aria-hidden="true">
-      <line x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}" stroke="${COLORS.inkSoft}" stroke-width="1.5" />
-      <line x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}" stroke="${COLORS.inkSoft}" stroke-width="1.5" />
+      <line x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}" stroke="${COLORS.axis}" stroke-width="1" />
+      <line x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}" stroke="${COLORS.axis}" stroke-width="1" />
       ${xTickLabels}
       ${yTickLabels}
-      <text x="${plotLeft + plotWidth / 2}" y="${plotBottom + (compact ? 58 : 63)}" text-anchor="middle" class="chart-axis-title">SPEED [rpm]</text>
-      <text x="${compact ? 17 : 21}" y="${plotTop + plotHeight / 2}" text-anchor="middle" class="chart-axis-title" transform="rotate(-90 ${compact ? 17 : 21} ${plotTop + plotHeight / 2})">TORQUE [Nm]</text>
+      <text x="${plotLeft + plotWidth / 2}" y="${plotBottom + (compact ? 54 : 60)}" text-anchor="middle" class="chart-axis-title">SPEED [rpm]</text>
+      <text x="${compact ? 16 : 20}" y="${plotTop + plotHeight / 2}" text-anchor="middle" class="chart-axis-title" transform="rotate(-90 ${compact ? 16 : 20} ${plotTop + plotHeight / 2})">TORQUE [Nm]</text>
     </g>
-    ${compact ? "" : `<g aria-hidden="true">
-      <circle cx="${plotLeft + 4}" cy="24" r="3.6" fill="${COLORS.accent}" />
-      <text x="${plotLeft + 14}" y="28" class="chart-meta chart-meta-accent">${metaLeft}</text>
-      <text x="${plotRight}" y="28" text-anchor="end" class="chart-meta">${metaRight}</text>
-    </g>`}
     <g aria-hidden="true">${guideLabels.join("")}</g>
     <g aria-hidden="true">
-      <circle cx="${ratedX}" cy="${ratedY}" r="8.2" fill="${COLORS.paper}" stroke="${COLORS.accent}" stroke-width="2.8" />
-      <circle cx="${ratedX}" cy="${ratedY}" r="2.8" fill="${COLORS.accent}" />
-      <circle cx="${checkX}" cy="${checkY}" r="8.2" fill="${COLORS.paper}" stroke="${COLORS.green}" stroke-width="2.8" />
-      <circle cx="${checkX}" cy="${checkY}" r="2.8" fill="${COLORS.green}" />
+      <circle cx="${ratedX}" cy="${ratedY}" r="6" fill="${COLORS.paper}" stroke="${COLORS.accent}" stroke-width="2.4" />
+      <circle cx="${ratedX}" cy="${ratedY}" r="2.2" fill="${COLORS.accent}" />
+      <circle cx="${checkX}" cy="${checkY}" r="6" fill="${COLORS.paper}" stroke="${COLORS.green}" stroke-width="2.4" />
+      <circle cx="${checkX}" cy="${checkY}" r="2.2" fill="${COLORS.green}" />
     </g>
     ${pointMarkup}
-    ${watermark}
     <g class="hover-layer" opacity="0" pointer-events="none" aria-hidden="true">
-      <line class="hover-line" x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}" stroke="${COLORS.accent}" stroke-width="1.3" stroke-dasharray="4 5" opacity=".65" />
-      <circle class="hover-dot" cx="${plotLeft}" cy="${plotBottom}" r="5.5" fill="${COLORS.paper}" stroke="${COLORS.accent}" stroke-width="2.5" />
+      <line class="hover-line" x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}" stroke="${COLORS.accent}" stroke-width="1.2" stroke-dasharray="4 5" opacity=".6" />
+      <circle class="hover-dot" cx="${plotLeft}" cy="${plotBottom}" r="5" fill="${COLORS.paper}" stroke="${COLORS.accent}" stroke-width="2.2" />
     </g>
-    <rect class="chart-hit" x="${plotLeft}" y="${plotTop}" width="${plotWidth}" height="${plotHeight}" fill="transparent" aria-label="플롯 위에서 속도와 토크를 확인하세요" />
+    <rect class="chart-hit" x="${plotLeft}" y="${plotTop}" width="${plotWidth}" height="${plotHeight}" fill="#000000" fill-opacity="0" pointer-events="all" aria-label="Move over the plot to read speed and torque" />
   </svg>`;
 
   return {
@@ -857,140 +744,123 @@ function buildChart(analysis, options) {
   };
 }
 
-function guideLabel({ text, x, y, font, color, topBoundary = 52 }) {
-  const width = text.length * font.guide * 0.62 + 18;
-  const height = font.guide + 12;
-  let topValue = y - height - 7;
-  if (topValue < topBoundary) topValue = y + 7;
-  return `
-    <g>
-      <rect x="${x}" y="${topValue}" width="${width}" height="${height}" rx="4" fill="${COLORS.plot}" opacity=".94" />
-      <text x="${x + 8}" y="${topValue + height - 6}" class="chart-guide-label" fill="${color}">${escapeXML(text)}</text>
-    </g>`;
+function guideText({ text, x, y, anchor, font, color, maxX }) {
+  const width = text.length * font.guide * 0.62;
+  const textX = maxX !== undefined ? Math.min(x, maxX - width) : x;
+  return `<text x="${textX}" y="${y}" text-anchor="${anchor}" class="chart-guide-label" fill="${color}">${escapeXML(text)}</text>`;
 }
 
-function miniPointLabel({ x, y, title, color, font, plot, preferred }) {
-  const width = title.length * font.pointTitle * 0.7 + 12;
-  const gap = 12;
-  let textX;
-  let anchor;
-  let textY;
-
-  if (preferred === "above") {
-    if (x + gap + width <= plot.right - 4) {
-      textX = x + gap;
-      anchor = "start";
-    } else {
-      textX = x - gap;
-      anchor = "end";
-    }
-    textY = y - 12;
-  } else if (x - gap - width >= plot.left + 4) {
-    textX = x - gap;
-    anchor = "end";
-    textY = y + font.pointTitle + 14;
-  } else {
-    textX = x + gap;
-    anchor = "start";
-    textY = y + font.pointTitle + 14;
-  }
-
-  const svg = `
-    <text x="${textX}" y="${textY}" text-anchor="${anchor}" class="chart-point-mini" fill="${color}" stroke="${COLORS.paper}" stroke-width="4.5" stroke-linejoin="round">${escapeXML(title)}</text>`;
-
-  return {
-    box: null,
-    point: { x, y },
-    color,
-    svg,
-  };
-}
-
-function placePointLabel({ x, y, title, torqueLabel, speedLabel, color, compact, font, plot, preferred, otherBoxes, leftAtEdge = false }) {
-  const plotWidth = plot.right - plot.left;
-  const shortLabel = compact && plotWidth < 400;
-  const compactText = shortLabel ? title : `${title} · ${torqueLabel}`;
-  const titleText = `${title} · ${speedLabel}`;
-  const width = compact
-    ? Math.max(92, compactText.length * font.pointCompact * 0.65 + 28)
-    : Math.max(
-        190,
-        titleText.length * font.pointTitle * 0.68 + 34,
-        torqueLabel.length * font.pointValue * 0.6 + 34,
-      );
-  const height = compact
-    ? font.pointCompact + 22
-    : font.pointTitle + font.pointValue + 20;
-  const gap = compact ? 12 : 8;
-  const useLeft = leftAtEdge
-    && x + gap + width > plot.right - 12
-    && x - width - gap >= plot.left + 8;
-  const horizontalOrder = useLeft ? ["left", "right"] : ["right", "left"];
-  const verticalOrder = preferred === "above" ? ["above", "below"] : ["below", "above"];
+function pointAnnotation({
+  x,
+  y,
+  title,
+  speedLabel,
+  torqueLabel,
+  color,
+  compact,
+  mini,
+  font,
+  plot,
+  preferred,
+  obstacles,
+  curve,
+}) {
+  const titleText = mini ? title : compact ? `${title} · ${torqueLabel}` : `${title} · ${speedLabel}`;
+  const showValue = !mini && !compact;
+  const titleSize = font.pointTitle;
+  const valueSize = font.pointValue;
+  const titleWidth = titleText.length * titleSize * 0.62;
+  const valueWidth = torqueLabel.length * valueSize * 0.6;
+  const width = Math.ceil(Math.max(titleWidth, showValue ? valueWidth : 0)) + 4;
+  const lineGap = 3;
+  const height = showValue ? Math.ceil(titleSize + lineGap + valueSize) + 2 : Math.ceil(titleSize) + 8;
+  const gap = 10;
+  const verticalOrder = preferred === "below" ? ["below", "above"] : ["above", "below"];
   const candidates = [];
 
   verticalOrder.forEach((vertical) => {
-    horizontalOrder.forEach((horizontal) => {
+    ["right", "left"].forEach((horizontal) => {
       candidates.push({
-        x: horizontal === "left" ? x - width - gap : x + gap,
-        y: vertical === "above" ? y - height - gap : y + gap,
+        vertical,
+        horizontal,
+        x: horizontal === "right" ? x + gap : x - gap - width,
+        y: vertical === "above" ? y - gap - height : y + gap,
       });
     });
   });
 
-  const padding = compact ? 7 : 10;
-  const candidatesWithBounds = candidates.map((candidate) => ({
-    x: clamp(candidate.x, plot.left + padding, plot.right - width - padding),
-    y: candidate.y,
-    fitsVertically: candidate.y >= plot.top + padding
-      && candidate.y + height <= plot.bottom - 0.5,
+  const bounded = candidates.map((candidate) => ({
+    ...candidate,
+    x: clamp(candidate.x, plot.left + 4, plot.right - width - 4),
+    fits: candidate.y >= plot.top + 4 && candidate.y + height <= plot.bottom - 4,
   }));
 
   let chosen = null;
-  for (const candidate of candidatesWithBounds) {
-    if (!candidate.fitsVertically) continue;
-    const intersects = otherBoxes.some((box) => rectanglesIntersect(
-      { x: candidate.x, y: candidate.y, width, height },
-      { x: box.x, y: box.y, width: box.width, height: box.height },
-      6,
-    ));
-    if (!intersects) {
-      chosen = candidate;
+  for (const candidate of bounded) {
+    if (!candidate.fits) continue;
+    const rect = { x: candidate.x, y: candidate.y, width, height };
+    const blocked = obstacles.some((box) => rectanglesIntersect(rect, box, 5));
+    const crossesCurve = lineIntersectsRect(curve.x1, curve.y1, curve.x2, curve.y2, rect, 5);
+    if (!blocked && !crossesCurve) {
+      chosen = { ...candidate, width, height };
       break;
     }
   }
 
   if (!chosen) {
-    const fallback = candidatesWithBounds.find((candidate) => candidate.fitsVertically)
-      || candidatesWithBounds[0];
+    const fallback = bounded.find((candidate) => candidate.fits) || bounded[0];
     chosen = {
-      x: fallback.x,
-      y: clamp(fallback.y, plot.top + padding, plot.bottom - height - 0.5),
+      ...fallback,
+      width,
+      height,
+      y: clamp(fallback.y, plot.top + 4, plot.bottom - height - 4),
     };
   }
 
-  const box = { x: chosen.x, y: chosen.y, width, height };
-  const svg = compact
-    ? `
-      <g>
-        <rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="8" fill="${COLORS.paper}" stroke="${color}" stroke-width="1.2" opacity=".97" />
-        <rect x="${box.x}" y="${box.y}" width="4" height="${box.height}" rx="2" fill="${color}" />
-        <text x="${box.x + 13}" y="${box.y + box.height / 2 + font.pointCompact * 0.34}" class="chart-point-compact" fill="${color}">${escapeXML(compactText)}</text>
-      </g>`
-    : `
-      <g>
-        <rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="9" fill="${COLORS.paper}" stroke="${COLORS.border}" stroke-width="1.2" opacity=".98" />
-        <rect x="${box.x}" y="${box.y}" width="4" height="${box.height}" rx="2" fill="${color}" />
-        <text x="${box.x + 16}" y="${box.y + font.pointTitle + 6}" class="chart-point-title" fill="${color}">${escapeXML(titleText)}</text>
-        <text x="${box.x + 16}" y="${box.y + font.pointTitle + font.pointValue + 14}" class="chart-point-value">${escapeXML(torqueLabel)}</text>
-      </g>`;
+  const anchor = chosen.horizontal === "right" ? "start" : "end";
+  const textX = chosen.horizontal === "right" ? chosen.x : chosen.x + width;
+  const titleBaseline = chosen.y + titleSize * 0.92;
+  const valueBaseline = chosen.y + titleSize + lineGap + valueSize * 0.86;
+  const svg = [
+    `<text x="${textX}" y="${titleBaseline}" text-anchor="${anchor}" class="chart-point-title" fill="${color}">${escapeXML(titleText)}</text>`,
+    showValue
+      ? `<text x="${textX}" y="${valueBaseline}" text-anchor="${anchor}" class="chart-point-value">${escapeXML(torqueLabel)}</text>`
+      : "",
+  ].join("");
 
   return {
-    box,
-    point: { x, y },
-    color,
+    rect: { x: chosen.x, y: chosen.y, width, height },
     svg,
   };
+}
+
+function lineIntersectsRect(x1, y1, x2, y2, rect, padding = 0) {
+  const minX = rect.x - padding;
+  const maxX = rect.x + rect.width + padding;
+  const minY = rect.y - padding;
+  const maxY = rect.y + rect.height + padding;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  let t0 = 0;
+  let t1 = 1;
+  const p = [-dx, dx, -dy, dy];
+  const q = [x1 - minX, maxX - x1, y1 - minY, maxY - y1];
+
+  for (let index = 0; index < 4; index += 1) {
+    if (p[index] === 0) {
+      if (q[index] < 0) return false;
+    } else {
+      const r = q[index] / p[index];
+      if (p[index] < 0) {
+        if (r > t1) return false;
+        if (r > t0) t0 = r;
+      } else {
+        if (r < t0) return false;
+        if (r < t1) t1 = r;
+      }
+    }
+  }
+  return true;
 }
 
 function rectanglesIntersect(a, b, padding = 0) {
@@ -1003,7 +873,7 @@ function rectanglesIntersect(a, b, padding = 0) {
 }
 
 function setDownloadsEnabled(enabled) {
-  refs.downloadButtons.forEach((button) => {
+  [...refs.downloadButtons, refs.captureButton].forEach((button) => {
     button.disabled = !enabled || state.busy;
     button.setAttribute("aria-disabled", String(!enabled || state.busy));
   });
@@ -1012,9 +882,9 @@ function setDownloadsEnabled(enabled) {
 function currentFileBase() {
   const analysis = state.analysis;
   const values = analysis.values;
-  const gearbox = analysis.gearboxEnabled
-    ? `_gear${formatFileValue(analysis.gearbox.ratio)}x-${formatFileValue(analysis.gearbox.efficiency)}eff`
-    : "";
+  const gearbox = analysis.noGearbox
+    ? ""
+    : `_gear${formatFileValue(analysis.gearbox.ratio)}x-${formatFileValue(analysis.gearbox.efficiency)}eff`;
   return `tn-curve${gearbox}_${formatFileValue(values.ratedTorque)}Nm-${formatFileValue(values.ratedSpeed)}rpm`;
 }
 
@@ -1025,7 +895,6 @@ function exportSvgMarkup() {
     compact: false,
     pixelWidth: EXPORT_WIDTH,
     pixelHeight: EXPORT_HEIGHT,
-    exportMode: true,
   }).svg;
 }
 
@@ -1034,7 +903,6 @@ async function downloadPlot(format, button) {
 
   state.busy = true;
   setDownloadsEnabled(false);
-  button.classList.add("is-busy");
   button.setAttribute("aria-busy", "true");
   hideTooltip();
 
@@ -1047,20 +915,53 @@ async function downloadPlot(format, button) {
         type: "image/svg+xml;charset=utf-8",
       });
       triggerDownload(blob, `${baseName}.svg`);
-      showToast("SVG 플롯을 다운로드했습니다.");
+      showToast("SVG plot downloaded.");
     } else {
       const blob = await svgToPngBlob(svgMarkup);
       triggerDownload(blob, `${baseName}.png`);
-      showToast("PNG 플롯을 다운로드했습니다.");
+      showToast("PNG plot downloaded.");
     }
   } catch (error) {
     console.error(error);
-    showToast("플롯 파일을 만들지 못했습니다. 다시 시도해 주세요.", true);
+    showToast("Could not create the plot file. Try again.", true);
   } finally {
     state.busy = false;
-    button.classList.remove("is-busy");
     button.removeAttribute("aria-busy");
     setDownloadsEnabled(Boolean(state.analysis?.complete));
+  }
+}
+
+async function capturePlot() {
+  if (!state.analysis?.complete || state.busy) return;
+
+  state.busy = true;
+  setDownloadsEnabled(false);
+  refs.captureButton.setAttribute("aria-busy", "true");
+
+  try {
+    if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+      throw new Error("Clipboard image copy is not supported");
+    }
+
+    const svgMarkup = exportSvgMarkup();
+    const blob = await svgToPngBlob(svgMarkup);
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    showToast("Plot copied to the clipboard. Press Ctrl+V to paste.");
+  } catch (error) {
+    console.error(error);
+    showToast("Could not copy the plot. Use the PNG download instead.", true);
+  } finally {
+    state.busy = false;
+    refs.captureButton.removeAttribute("aria-busy");
+    setDownloadsEnabled(Boolean(state.analysis?.complete));
+  }
+}
+
+function openCaution() {
+  if (typeof refs.cautionDialog.showModal === "function") {
+    refs.cautionDialog.showModal();
+  } else {
+    refs.cautionDialog.setAttribute("open", "");
   }
 }
 
@@ -1185,6 +1086,24 @@ function handlePointerMove(event) {
   refs.chartTooltip.style.top = `${dotY}px`;
 }
 
+function handleNoGearboxChange() {
+  const checked = refs.noGearbox.checked;
+  if (checked) {
+    savedGearbox.ratio = refs.gearRatio.value;
+    savedGearbox.efficiency = refs.gearEfficiency.value;
+    refs.gearRatio.value = "1";
+    refs.gearEfficiency.value = "100";
+  } else {
+    refs.gearRatio.value = savedGearbox.ratio;
+    refs.gearEfficiency.value = savedGearbox.efficiency;
+  }
+
+  refs.gearRatio.disabled = checked;
+  refs.gearEfficiency.disabled = checked;
+  state.renderWidth = 0;
+  update();
+}
+
 function resetInputs() {
   FIELD_IDS.forEach((id) => {
     document.querySelector(`#${id}`).value = DEFAULTS[id];
@@ -1192,19 +1111,28 @@ function resetInputs() {
   GEARBOX_FIELD_IDS.forEach((id) => {
     document.querySelector(`#${id}`).value = GEARBOX_DEFAULTS[id];
   });
-  refs.driveModeInputs.forEach((input) => {
-    input.checked = input.value === "motor";
-  });
-  syncDriveModeUI("motor");
+  refs.noGearbox.checked = false;
+  refs.gearRatio.disabled = false;
+  refs.gearEfficiency.disabled = false;
+  savedGearbox = {
+    ratio: String(GEARBOX_DEFAULTS.gearRatio),
+    efficiency: String(GEARBOX_DEFAULTS.gearEfficiency),
+  };
   state.renderWidth = 0;
   update();
-  showToast("기본 예제 값으로 초기화했습니다.");
+  showToast("Inputs reset to the example values.");
 }
 
 function bindEvents() {
   refs.form.addEventListener("input", scheduleUpdate);
   refs.form.addEventListener("submit", (event) => event.preventDefault());
+  refs.noGearbox.addEventListener("change", handleNoGearboxChange);
   refs.resetButton.addEventListener("click", resetInputs);
+  refs.captureButton.addEventListener("click", capturePlot);
+  refs.cautionButton.addEventListener("click", openCaution);
+  refs.cautionDialog.addEventListener("click", (event) => {
+    if (event.target === refs.cautionDialog) refs.cautionDialog.close();
+  });
   refs.downloadButtons.forEach((button) => {
     button.addEventListener("click", () => downloadPlot(button.dataset.format, button));
   });
@@ -1230,6 +1158,12 @@ function bindEvents() {
 
 function init() {
   refs.year.textContent = String(new Date().getFullYear());
+  if (refs.noGearbox.checked) {
+    refs.gearRatio.value = "1";
+    refs.gearEfficiency.value = "100";
+    refs.gearRatio.disabled = true;
+    refs.gearEfficiency.disabled = true;
+  }
   bindEvents();
   update();
   window.addEventListener("load", () => {

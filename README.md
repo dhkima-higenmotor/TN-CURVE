@@ -1,119 +1,124 @@
-# TN Curve Studio
+# TN Curve
 
-모터의 **Rated Point**와 **Check Point**를 이용해 직선형 TN Curve(Torque–Speed Curve)를 그리고, SVG 또는 PNG로 내려받는 정적 웹 도구입니다. **모터 단독**과 **기어박스 결합** 조건을 선택할 수 있으며, 기어박스의 감속비·정격효율을 반영한 출력축 성능을 플롯합니다.
+English | [Korean](README_KO.md)
 
-서버나 데이터베이스 없이 `index.html`과 정적 asset만으로 동작하며, GitHub Pages에 그대로 배포할 수 있습니다. 모든 계산과 이미지 생성은 사용자의 브라우저에서 실행됩니다.
+A static web tool that draws a straight TN curve (torque–speed curve) from a motor's **rated point** and **check point**. By default the values are converted to the gearbox output shaft using the reduction ratio and rated efficiency; enable **No Gearbox** to use the motor/input-shaft values directly.
 
-![TN Curve Studio 미리보기 — 기어박스 출력축 모드](docs/preview.png)
+No server or database is required. The tool runs from `index.html` and static assets, and can be deployed to GitHub Pages as-is. All calculations and image generation happen in the browser.
 
-## 기능
+![TN Curve preview — default gearbox output mode](docs/preview.png)
 
-- **Motor only / With gearbox** 케이스 선택
-- Rated Torque / Rated Speed, Check Torque / Check Speed 입력
-- 기어박스 모드: **감속비율**(reduction ratio)과 **정격효율**(rated efficiency) 추가 입력
-- 두 운전점을 지나는 직선을 플롯 기준축의 y축(0 rpm)·x축(0 Nm)까지 연장
-- Rated Torque의 **100%** 가이드와 **300%** 가이드 표시
-- 각 가이드 아래 영역을 밝은 회색 / 진한 회색으로 채움
-- Max Speed @ No Load를 세로 참조선으로 표시
-- 곡선 위 마우스 위치의 Speed / Torque를 실시간 확인
-- **SVG**(벡터) 및 **PNG**(1800 × 1200) 다운로드
-- 반응형 레이아웃, 키보드 포커스, 모션 감소 설정 대응
+## Features
 
-## 계산 규칙
+- Rated torque/speed and check torque/speed inputs (motor, input shaft)
+- Reduction ratio and rated efficiency inputs
+- **No Gearbox** option: sets the ratio to 1 and efficiency to 100% and locks both fields
+- Extends the line through both points to the y-axis (0 rpm) and x-axis (0 Nm)
+- **100%** and **300%** rated-torque guides with shaded bands below them (lighter below 300%, darker below 100%)
+- Reports the x-intercept as max speed at no load
+- Live speed/torque readout while hovering over the curve
+- **CAPTURE**: copies the plot to the clipboard as a PNG for pasting with `Ctrl+V` (`Cmd+V` on macOS)
+- **CAUTION**: explains the limits of the simplified model (no magnetic saturation, temperature, motor/drive/bearing efficiency; gearbox efficiency treated as a constant)
+- **SVG** (vector) and **PNG** (1800 × 1200) downloads
+- Responsive layout, keyboard focus styles, and reduced-motion support
 
-### 1. 모터축 입력
+## Calculation rules
 
-`Rated Torque / Speed`와 `Check Torque / Speed`, `Max Speed @ No Load`는 **모터축 기준 입력값**입니다.
+### 1. Motor input
 
-### 2. 기어박스가 있는 경우
+The rated and check torque/speed values are **motor-side (input-shaft) inputs**.
 
-감속비 `i`, 정격효율 `η`(%)를 사용해 출력축 값으로 환산합니다.
+### 2. Gearbox output conversion
+
+The ratio `i` and rated efficiency `η` (%) convert the motor values to the output shaft:
 
 ```text
 N_out = N_motor / i
 T_out = T_motor × i × (η / 100)
-N_max,out = N_max,motor / i
 ```
 
-- 감속비 `i`는 **모터축 속도 ÷ 출력축 속도**입니다. `10`은 `10:1` 감속을 의미합니다.
-- 정격효율 `η`는 `%` 단위로 입력합니다. `95`는 95%를 의미합니다.
-- `i = 1`, `η = 100`이면 모터 단독과 동일합니다.
-- 감속비는 `1` 이상, 효율은 `0%` 초과 `100%` 이하로 검증합니다.
-- 플롯, 100%·300% 가이드, Max Speed 참조선, 축 절편은 모두 **출력축 기준**으로 계산됩니다.
-- 입력 필드의 Rated/Check/Reference 값은 모터축 값 그대로 유지됩니다.
+- `i` is **motor speed ÷ output speed**. `10` means 10:1 reduction.
+- `η` is entered as a percentage. `95` means 95%.
+- The ratio must be at least 1; efficiency must be greater than 0% and at most 100%.
+- The plot, 100%/300% guides, and axis intercepts are calculated on the **output shaft**.
+- The rated/check fields keep the motor-side values.
+- With **No Gearbox** enabled, `i = 1` and `η = 100%`, the two fields are locked, and the output values equal the motor values. Unchecking restores the previously entered gearbox values.
 
-### 3. 직선과 가이드
+### 3. Line and guides
 
-플롯 기준축의 두 점 `(N₁, T₁)`, `(N₂, T₂)`로 직선을 계산합니다.
+Using the two points `(N₁, T₁)` and `(N₂, T₂)` on the plot basis:
 
 ```text
 m = (T₂ − T₁) / (N₂ − N₁)
 T = m·N + b
 ```
 
-- y축 절편: `(0, b)` → 0 rpm에서의 토크
-- x축 절편: `(b / −m, 0)` → 토크가 0이 되는 속도
-- 300% 가이드: `T = 3 × Rated Torque` (선택한 출력축 기준)
-- 100% 가이드: `T = Rated Torque` (선택한 출력축 기준)
-- 각 가이드는 Speed 0에서 시작해 곡선과 만나는 지점까지만 그립니다.
-- **Max Speed @ No Load는 참조값입니다.** 직선을 결정하는 값은 Rated/Check 두 점이며, Max speed는 플롯 위 참조선과 x절편 비교를 위해 사용됩니다. 세 값이 일치하면 자연스럽게 같은 위치에 표시됩니다.
+- y-intercept: `(0, b)` — torque at 0 rpm (stall torque)
+- x-intercept: `(b / −m, 0)` — speed at 0 Nm, shown as max speed at no load
+- 300% guide: `T = 3 × rated torque` (on the selected output basis)
+- 100% guide: `T = rated torque` (on the selected output basis)
+- Each guide starts at speed 0 and stops where it meets the curve. The shaded band below each guide uses the same extent.
 
-> 300% 토크가 0 rpm 절편보다 높으면 가이드가 곡선과 만날 수 없습니다. 이 경우 도구가 경고를 표시하고, 300% 기준선만 점선으로 보여 줍니다.
+> If 300% of rated torque is above the 0-rpm intercept, the guide cannot meet the curve. The tool shows a warning and draws the 300% level as a dashed line without shading.
 
-## 로컬 미리보기
+## Simplified model
 
-별도 빌드 과정이 없습니다. 저장소 루트에서 정적 서버만 실행하면 됩니다.
+The chart is intended for preliminary sizing and reference only. The model does not consider magnetic saturation, temperature effects, motor efficiency, drive efficiency, or bearing efficiency, and it treats gearbox efficiency as a constant. Physical testing is required to obtain accurate performance data.
+
+## Local preview
+
+No build step is required. Serve the repository root with any static server:
 
 ```bash
-# Node.js
 npx serve .
-
-# 또는 Python
+# or
 python -m http.server 4173
 ```
 
-브라우저에서 `http://localhost:3000` 또는 `http://localhost:4173`을 엽니다.
+Open `http://localhost:3000` or `http://localhost:4173`.
 
-> `index.html`을 `file://`로 직접 열어도 동작하지만, 브라우저별 다운로드 제한을 피하려면 로컬 서버 사용을 권장합니다.
+> Opening `index.html` directly via `file://` also works, but a local server avoids browser-specific download restrictions.
 
-## GitHub Pages 배포
+## GitHub Pages deployment
 
-1. GitHub 저장소의 **Settings → Pages**로 이동합니다.
-2. **Build and deployment → Source**를 **GitHub Actions**로 선택합니다.
-3. `main` 브랜치에 push하거나 **Actions → Deploy TN Curve to GitHub Pages → Run workflow**를 실행합니다.
-4. 워크플로가 완료되면 아래 주소에서 확인할 수 있습니다.
+1. Go to the repository's **Settings → Pages**.
+2. Under **Build and deployment → Source**, choose **GitHub Actions**.
+3. Push to `main`, or run **Actions → Deploy TN Curve to GitHub Pages → Run workflow**.
+4. When the workflow finishes, the site is available at:
 
 ```text
 https://dhkima-higenmotor.github.io/TN-CURVE/
 ```
 
-워크플로 파일: [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)
+Workflow: [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)
 
-- 빌드 스텝 없이 `index.html`, `assets/`, `.nojekyll`만 artifact로 업로드합니다.
-- 저장소 루트가 곧 배포 단위이므로, 별도 프레임워크나 Node 런타임이 필요하지 않습니다.
-- 커스텀 도메인을 사용할 경우 Pages 설정에서 도메인을 연결하면 됩니다.
+- The workflow uploads `index.html`, `assets/`, and `.nojekyll` without a build step.
+- The repository root is the deployment unit; no framework or Node runtime is required.
+- To use a custom domain, connect it in the Pages settings.
 
-## 파일 구조
+## Project structure
 
 ```text
 .
 ├─ index.html
 ├─ assets/
-│  ├─ app.js          # 곡선 계산, SVG 렌더링, PNG 변환, 상호작용
-│  ├─ styles.css      # 반응형 UI
-│  └─ favicon.svg
+│  ├─ app.js          # curve math, SVG rendering, PNG export, interactions
+│  ├─ styles.css      # responsive UI
+│  └─ LOGO_HIGENRNM_smaller.png   # header brand logo
 ├─ .github/
 │  └─ workflows/
 │     └─ deploy-pages.yml
 ├─ docs/
 │  └─ preview.png
 ├─ .nojekyll
-└─ README.md
+├─ README.md
+└─ README_KO.md
 ```
 
-## 참고
+## Notes
 
-- SVG 플롯은 브라우저에서 직접 생성한 standalone SVG입니다. 별도 이미지 서버가 필요하지 않습니다.
-- PNG는 SVG를 브라우저의 `<canvas>`로 렌더링해 1800 × 1200 해상도로 저장합니다.
-- 입력값은 어디에도 전송되거나 저장되지 않습니다.
-- 최신 Chrome, Edge, Safari, Firefox를 지원합니다.
+- The SVG is generated entirely in the browser as a standalone file; no image server is needed.
+- PNG export renders the SVG through a `<canvas>` at 1800 × 1200.
+- **CAPTURE** writes a PNG of the plot to the clipboard (requires a secure context and browser clipboard support).
+- Inputs are never transmitted or stored.
+- Supported in current versions of Chrome, Edge, Safari, and Firefox.
